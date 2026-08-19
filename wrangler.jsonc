@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "oh-my-vibecode",
+  "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "server.ts",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "oh-my-vibecode-db",
+      "database_id": "placeholder-run-setup",
+      "migrations_dir": "drizzle"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

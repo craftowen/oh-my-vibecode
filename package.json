@@ -1,0 +1,47 @@
+{
+  "name": "oh-my-vibecode",
+  "private": true,
+  "sideEffects": false,
+  "type": "module",
+  "scripts": {
+    "dev": "react-router dev",
+    "build": "react-router build",
+    "deploy": "wrangler deploy",
+    "setup": "bun scripts/setup.ts",
+    "typecheck": "react-router typegen && tsc",
+    "check": "bun run typecheck && bun run build && bun run test",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "cf-typegen": "wrangler types"
+  },
+  "dependencies": {
+    "@react-router/fs-routes": "^8.3.0",
+    "@react-router/node": "^8.3.0",
+    "better-auth": "^1.7.1",
+    "drizzle-orm": "^0.45.2",
+    "isbot": "^5.2.1",
+    "lucide-react": "^0.475.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.53.0",
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^5.20260819.1",
+    "@react-router/dev": "^8.3.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.2.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "drizzle-kit": "^0.31.10",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.1",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "~4.1.0",
+    "wrangler": "^4.124.0"
+  }
+}
