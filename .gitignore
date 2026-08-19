@@ -1,5 +1,27 @@
+# deps / build
 node_modules
-.dev.vars
-.wrangler
 build
+dist
 .react-router
+
+# secrets — never commit
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.dev.vars.example
+!.env.example
+
+# cloudflare local state (local D1 sqlite, KV, R2 live here)
+.wrangler
+
+# test / coverage / logs
+coverage
+*.log
+npm-debug.log*
+
+# editor / os
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
