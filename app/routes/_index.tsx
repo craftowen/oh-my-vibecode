@@ -12,6 +12,7 @@ export default function Index() {
         </p>
         <div className="flex justify-center gap-4">
           <Link
+            prefetch="intent"
             to="/login"
             className="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition"
           >

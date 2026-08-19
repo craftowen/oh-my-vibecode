@@ -47,6 +47,16 @@ tests/                    # vitest-pool-workers specs
 5. `tests/notes.spec.ts`: follow `tests/auth.spec.ts` structure.
 6. `bun run check` — done only when green.
 
+## Performance rules (non-negotiable defaults)
+
+Pages must render fast. Every new page follows these:
+
+1. **Stream slow data — never block the shell.** In loaders, `await` only what the shell needs (session comes free from `sessionContext`). Return slow queries as un-awaited promises and render them with `<Suspense fallback={<Skeleton/>}>` + React 19 `use(promise)`. Reference implementation: `app/routes/_app.dashboard.tsx`.
+2. **Prefetch on intent.** Every internal `<Link>` gets `prefetch="intent"` (loads code+data on hover/focus) unless it points to an auth-mutating URL.
+3. **Don't re-fetch what middleware resolved.** Session reads are `context.get(sessionContext)!` — an extra `getSession` call per loader is a wasted DB roundtrip.
+4. **Keep the client bundle lean.** No new client-side data libraries; loaders + fetchers are the data layer. Heavy, below-the-fold components load via `React.lazy`.
+5. **Parallelize queries.** Multiple independent queries in one loader start together (create promises first, then await what's needed) — never sequential awaits.
+
 ## Constraints
 
 - No new runtime dependencies without explicit user approval (current allowlist: react-router, better-auth, drizzle-orm, tailwind v4, lucide-react).
