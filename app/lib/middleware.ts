@@ -11,13 +11,16 @@ export const sessionContext = createContext<Session>();
 /** React Router 8 middleware: runs once before all loaders/actions in the
  * protected subtree. Redirects to /login when unauthenticated, otherwise
  * stores the session in context so loaders never re-fetch it. */
-export const authMiddleware = async ({
-  request,
-  context,
-}: {
-  request: Request;
-  context: Readonly<RouterContextProvider>;
-}): Promise<void> => {
+export const authMiddleware = async (
+  {
+    request,
+    context,
+  }: {
+    request: Request;
+    context: Readonly<RouterContextProvider>;
+  },
+  next: () => Promise<Response>,
+): Promise<Response> => {
   const { env } = context.get(cloudflareContext)!;
   const auth = buildAuth(env);
   const session = await auth.api.getSession({ headers: request.headers });
@@ -25,4 +28,5 @@ export const authMiddleware = async ({
     throw redirect("/login");
   }
   context.set(sessionContext, session);
+  return next();
 };

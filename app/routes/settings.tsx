@@ -1,5 +1,5 @@
 import { useRouteLoaderData } from "react-router";
-import type { Route } from "./+types/_app.settings";
+import type { Route } from "./+types/settings";
 import { buildAuth } from "../lib/auth.server";
 
 import { cloudflareContext } from "../lib/app-context";

@@ -1,6 +1,6 @@
 import { Outlet, redirect, Form, useLoaderData } from "react-router";
 import { authMiddleware, sessionContext } from "../lib/middleware";
-import type { Route } from "./+types/_app";
+import type { Route } from "./+types/layout";
 
 export const middleware: Route.MiddlewareFunction[] = [authMiddleware];
 

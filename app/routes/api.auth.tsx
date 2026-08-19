@@ -1,5 +1,5 @@
 import { buildAuth } from "../lib/auth.server";
-import type { Route } from "./+types/api.auth.$";
+import type { Route } from "./+types/api.auth";
 
 export async function action({ request, context }: Route.ActionArgs) {
   const auth = buildAuth(context.get(cloudflareContext)!.env);

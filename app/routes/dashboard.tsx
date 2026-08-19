@@ -5,7 +5,7 @@ import { count } from "drizzle-orm";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
 import { user } from "../db/auth-schema";
-import type { Route } from "./+types/_app.dashboard";
+import type { Route } from "./+types/dashboard";
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: "Dashboard" }];

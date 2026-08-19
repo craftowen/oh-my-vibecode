@@ -1,10 +1,9 @@
 import { defineConfig } from "vitest/config";
-import tsconfigPaths from "vite-tsconfig-paths";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 
 export default defineConfig({
+  resolve: { tsconfigPaths: true },
   plugins: [
-    tsconfigPaths(),
     cloudflareTest({
       main: "./build/server/index.js",
       wrangler: { configPath: "./wrangler.jsonc" },

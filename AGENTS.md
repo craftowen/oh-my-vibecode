@@ -22,7 +22,7 @@ bun run deploy            # wrangler deploy (requires wrangler login; prod migra
 ```
 server.ts                 # Worker entry: request handler + RouterContextProvider(env, ctx)
 app/routes.ts             # explicit route table — every new route is registered here
-app/routes/               # _index, login, signup, api.auth.$, _app (protected layout), _app.dashboard, _app.settings
+app/routes/               # home, login, signup, api.auth, layout (protected shell), dashboard, settings — flat names; routing lives ONLY in app/routes.ts
 app/lib/app-context.ts    # cloudflareContext — read env/ctx in loaders: context.get(cloudflareContext)!.env
 app/lib/auth.server.ts    # buildAuth(env) — lazy per-env Better Auth instance
 app/lib/middleware.ts     # authMiddleware (RR8 middleware) + sessionContext
@@ -35,15 +35,15 @@ tests/                    # vitest-pool-workers specs
 
 1. **Cloudflare bindings**: only available per-request. In loaders/actions: `const { env } = context.get(cloudflareContext)!;`. Never touch bindings at module scope.
 2. **Auth**: `buildAuth(env)` (lazy, cached per env). Client side uses `authClient` from `app/lib/auth.client.ts`. Auth HTTP endpoints live under `/api/auth/*` — do not add your own login/logout endpoints.
-3. **Protected routes**: place them under the `_app` layout. `authMiddleware` (RR8 middleware, runs once before all loaders in the subtree) redirects anonymous users to /login and stores the session; read it with `context.get(sessionContext)!` — never call `getSession` again in loaders under `_app`.
+3. **Protected routes**: place them under the protected `layout` route. `authMiddleware` (RR8 middleware, runs once before all loaders in the subtree) redirects anonymous users to /login and stores the session; read it with `context.get(sessionContext)!` — never call `getSession` again in loaders under the protected layout.
 4. **DB changes**: edit `app/db/schema.ts` → `bun run db:generate` → `bun run db:migrate:local` → commit generated files in `drizzle/`. Never write raw SQL migrations by hand.
 
 ## Recipe: add a CRUD feature (e.g. "notes")
 
 1. `app/db/schema.ts`: add the Drizzle table (include `userId` referencing `user.id` if per-user).
 2. `bun run db:generate && bun run db:migrate:local`.
-3. `app/routes/_app.notes.tsx`: loader (read via `drizzle(env.DB)`), action (create/delete), component. Session from `context.get(sessionContext)!`.
-4. Register in `app/routes.ts` under the `_app` layout.
+3. `app/routes/notes.tsx`: loader (read via `drizzle(env.DB)`), action (create/delete), component. Session from `context.get(sessionContext)!`.
+4. Register in `app/routes.ts` under the protected `layout` route.
 5. `tests/notes.spec.ts`: follow `tests/auth.spec.ts` structure.
 6. `bun run check` — done only when green.
 
@@ -51,7 +51,7 @@ tests/                    # vitest-pool-workers specs
 
 Pages must render fast. Every new page follows these:
 
-1. **Stream slow data — never block the shell.** In loaders, `await` only what the shell needs (session comes free from `sessionContext`). Return slow queries as un-awaited promises and render them with `<Suspense fallback={<Skeleton/>}>` + React 19 `use(promise)`. Reference implementation: `app/routes/_app.dashboard.tsx`.
+1. **Stream slow data — never block the shell.** In loaders, `await` only what the shell needs (session comes free from `sessionContext`). Return slow queries as un-awaited promises and render them with `<Suspense fallback={<Skeleton/>}>` + React 19 `use(promise)`. Reference implementation: `app/routes/dashboard.tsx`.
 2. **Prefetch on intent.** Every internal `<Link>` gets `prefetch="intent"` (loads code+data on hover/focus) unless it points to an auth-mutating URL.
 3. **Don't re-fetch what middleware resolved.** Session reads are `context.get(sessionContext)!` — an extra `getSession` call per loader is a wasted DB roundtrip.
 4. **Keep the client bundle lean.** No new client-side data libraries; loaders + fetchers are the data layer. Heavy, below-the-fold components load via `React.lazy`.
