@@ -1,2 +1,12 @@
+# Required
 BETTER_AUTH_SECRET=changeme_in_production
 BETTER_AUTH_URL=http://localhost:5173
+
+# Optional — Google sign-in. Leave empty to hide the button.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Optional — transactional email (verification, password reset).
+# Leave RESEND_API_KEY empty and emails are printed to the Worker console instead.
+RESEND_API_KEY=
+EMAIL_FROM=onboarding@resend.dev

@@ -9,7 +9,24 @@ const devVarsPath = path.join(rootDir, ".dev.vars");
 // (a) Create .dev.vars
 if (!fs.existsSync(devVarsPath)) {
   const secret = crypto.randomUUID();
-  fs.writeFileSync(devVarsPath, `BETTER_AUTH_SECRET=${secret}\nBETTER_AUTH_URL=http://localhost:5173\n`);
+  fs.writeFileSync(
+    devVarsPath,
+    [
+      "# Required",
+      `BETTER_AUTH_SECRET=${secret}`,
+      "BETTER_AUTH_URL=http://localhost:5173",
+      "",
+      "# Optional — Google sign-in. Leave empty to hide the button.",
+      "GOOGLE_CLIENT_ID=",
+      "GOOGLE_CLIENT_SECRET=",
+      "",
+      "# Optional — transactional email (verification, password reset).",
+      "# Leave RESEND_API_KEY empty and emails are printed to the Worker console.",
+      "RESEND_API_KEY=",
+      "EMAIL_FROM=onboarding@resend.dev",
+      "",
+    ].join("\n"),
+  );
   console.log("Created .dev.vars with secrets.");
 } else {
   console.log(".dev.vars already exists, skipping creation.");
@@ -33,4 +50,4 @@ try {
   process.exit(1);
 }
 
-console.log("Setup complete! Use demo@example.com / password1234 on the signup page to create an account, or log in if already created.");
+console.log("Setup complete! Run `bun dev`, open http://localhost:5173/signup — the demo account is pre-filled, so one click gets you to the dashboard.");

@@ -1,91 +1,170 @@
-import { Form, Link, redirect, useLoaderData } from "react-router";
+import { Form, Link, data, redirect, useNavigation } from "react-router";
 import { buildAuth } from "../lib/auth.server";
-import { useState } from "react";
-import type { Route } from "./+types/login";
-import { authClient } from "../lib/auth.client";
-
+import {
+  authErrorMessage,
+  redirectWithSession,
+  responseErrorMessage,
+} from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
+import { limitAuthAttempt } from "../lib/rate-limit.server";
+import { field } from "../lib/validation";
+import { authClient } from "../lib/auth.client";
+import { AuthShell } from "../components/auth-shell";
+import { Field } from "../components/field";
+import { Alert } from "../components/ui/alert";
+import { Button } from "../components/ui/button";
+import type { Route } from "./+types/login";
+
+export const meta: Route.MetaFunction = () => [{ title: "Log in · oh-my-vibecode" }];
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const auth = buildAuth(context.get(cloudflareContext)!.env);
+  const { env } = context.get(cloudflareContext)!;
+  const auth = buildAuth(env);
   const session = await auth.api.getSession({ headers: request.headers });
-  if (session) {
-    throw redirect("/dashboard");
-  }
+  if (session) throw redirect("/dashboard");
+
+  const url = new URL(request.url);
   return {
-    hasGoogle: !!(context.get(cloudflareContext)!.env.GOOGLE_CLIENT_ID && context.get(cloudflareContext)!.env.GOOGLE_CLIENT_SECRET)
+    hasGoogle: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+    justReset: url.searchParams.has("reset"),
   };
 }
 
-export default function Login() {
-  const { hasGoogle } = useLoaderData<typeof loader>();
-  const [email, setEmail] = useState("demo@example.com");
-  const [password, setPassword] = useState("password1234");
-  const [error, setError] = useState("");
+/**
+ * Server-side sign-in. Doing this in an action (instead of calling the auth
+ * client from an onSubmit handler) is what makes the form work without JS and
+ * lets React Router own the redirect.
+ */
+export async function action({ request, context }: Route.ActionArgs) {
+  const { env } = context.get(cloudflareContext)!;
+  const form = await request.formData();
+  const email = field(form, "email");
+  const password = String(form.get("password") ?? "");
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError("");
-    const { data, error } = await authClient.signIn.email({
-      email,
-      password,
-    });
-    if (error) {
-      setError(error.message || "Failed to login");
-    } else {
-      window.location.href = "/dashboard";
-    }
+  const errors: Record<string, string> = {};
+  if (!email) errors.email = "Email is required.";
+  if (!password) errors.password = "Password is required.";
+  if (Object.keys(errors).length > 0) {
+    return data({ errors, values: { email } }, { status: 400 });
   }
 
+  // Better Auth's own limiter only guards /api/auth/*; this action bypasses it.
+  const limit = await limitAuthAttempt(env, request, "login", {
+    window: 300,
+    max: 10,
+  });
+  if (limit.blocked) {
+    const formError: Record<string, string> = { form: limit.message };
+    return data({ errors: formError, values: { email } }, { status: 429 });
+  }
+
+  const auth = buildAuth(env);
+  try {
+    const response = await auth.api.signInEmail({
+      body: { email, password },
+      headers: request.headers,
+      asResponse: true,
+    });
+    if (!response.ok) {
+      const formError: Record<string, string> = {
+        form: await responseErrorMessage(response, "Invalid email or password."),
+      };
+      return data({ errors: formError, values: { email } }, { status: 400 });
+    }
+    return redirectWithSession(response, "/dashboard");
+  } catch (error) {
+    const formError: Record<string, string> = {
+      form: authErrorMessage(error, "Invalid email or password."),
+    };
+    return data({ errors: formError, values: { email } }, { status: 400 });
+  }
+}
+
+export default function Login({ loaderData, actionData }: Route.ComponentProps) {
+  const navigation = useNavigation();
+  const submitting = navigation.formAction === "/login";
+  const errors = actionData?.errors ?? {};
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
-        <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
-        <div className="bg-blue-50 text-blue-800 p-3 mb-6 rounded text-sm">
-          Demo Account: demo@example.com / password1234
-        </div>
-        {error && <div className="bg-red-50 text-red-600 p-3 mb-4 rounded text-sm">{error}</div>}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="mt-1 block w-full p-2 border rounded-md"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="mt-1 block w-full p-2 border rounded-md"
-              required
-            />
-          </div>
-          <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700">
-            Sign in
-          </button>
-        </form>
+    <AuthShell
+      title="Welcome back"
+      description="Log in to continue to your dashboard."
+      footer={
+        <>
+          No account yet?{" "}
+          <Link
+            to="/signup"
+            prefetch="intent"
+            className="text-primary underline-offset-4 hover:underline"
+          >
+            Create one
+          </Link>{" "}
+          — a fresh install has no users until you do.
+        </>
+      }
+    >
+      {loaderData.justReset && (
+        <Alert variant="success">
+          Your password was changed. Log in with the new one.
+        </Alert>
+      )}
 
-        {hasGoogle && (
-          <div className="mt-4 pt-4 border-t">
-            <button
-              onClick={() => authClient.signIn.social({ provider: "google" })}
-              className="w-full bg-white text-gray-700 border border-gray-300 p-2 rounded-md hover:bg-gray-50"
+      {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
+
+      <Form method="post" className="space-y-4" replace>
+        <Field
+          label="Email"
+          name="email"
+          type="email"
+          autoComplete="email"
+          defaultValue={actionData?.values?.email}
+          error={errors.email}
+          required
+        />
+        <div className="space-y-1">
+          <Field
+            label="Password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            error={errors.password}
+            required
+          />
+          <div className="text-right">
+            <Link
+              to="/forgot-password"
+              prefetch="intent"
+              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
             >
-              Sign in with Google
-            </button>
+              Forgot your password?
+            </Link>
           </div>
-        )}
-
-        <div className="mt-6 text-center text-sm text-gray-600">
-          Don't have an account? <Link to="/signup" className="text-blue-600 hover:underline">Sign up</Link>
         </div>
-      </div>
-    </div>
+        <Button type="submit" className="w-full" disabled={submitting}>
+          {submitting ? "Signing in…" : "Sign in"}
+        </Button>
+      </Form>
+
+      {loaderData.hasGoogle && (
+        <>
+          <div className="relative text-center text-xs text-muted-foreground">
+            <span className="relative z-10 bg-card px-2">or</span>
+            <span className="absolute inset-x-0 top-1/2 -z-0 block border-t" />
+          </div>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() =>
+              authClient.signIn.social({
+                provider: "google",
+                callbackURL: "/dashboard",
+              })
+            }
+          >
+            Continue with Google
+          </Button>
+        </>
+      )}
+    </AuthShell>
   );
 }
