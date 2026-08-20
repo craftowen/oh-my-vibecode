@@ -4,6 +4,9 @@ build
 dist
 .react-router
 
+# internal planning — kept locally, not published
+PLAN.md
+
 # secrets — never commit
 .dev.vars
 .dev.vars.*
