@@ -1,0 +1,59 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - .github/**
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    name: check and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Provision local D1 + .dev.vars
+        run: bun run setup
+
+      - name: Typecheck, build and test
+        run: bun run check
+
+      - name: Restore production Worker configuration
+        env:
+          WORKER_CONFIG: ${{ secrets.CLOUDFLARE_WRANGLER_CONFIG }}
+        run: |
+          test -n "$WORKER_CONFIG"
+          printf '%s\n' "$WORKER_CONFIG" > wrangler.jsonc
+          rm -f .dev.vars
+
+      - name: Build production
+        run: bun run build
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config build/server/wrangler.json --keep-vars
+
+      - name: Check production response
+        run: curl --fail --silent --show-error --retry 3 --retry-all-errors --user-agent 'Mozilla/5.0' --output /dev/null https://oh-my-vibecode.tnlvof.workers.dev/login
