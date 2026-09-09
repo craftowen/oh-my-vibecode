@@ -2,6 +2,8 @@
 
 Instructions for AI agents (and humans) working in this repo. Read this file first; you should not need to explore the codebase to add a feature.
 
+This is the **only** instruction file. `CLAUDE.md` is a one-line `@AGENTS.md` import so Claude Code, Codex, Cursor and humans all read the same text — edit here, never there. Style rules (formatting, naming, imports, comments, tests, git) live in [docs/CONVENTIONS.md](./docs/CONVENTIONS.md); the summary below is the part you must not skip.
+
 Stack: React Router 8 (framework mode, SSR) on Cloudflare Workers · D1 + Drizzle ORM · Better Auth · Tailwind v4 · Vitest (workers pool) · bun.
 
 ## Commands
@@ -42,6 +44,7 @@ app/lib/middleware.ts     # authMiddleware (RR8 middleware) + sessionContext
 app/lib/theme.ts          # theme cookie read/write (dark mode)
 app/lib/cn.ts             # class joiner (no clsx/tailwind-merge — see UI rules)
 docs/recipes/             # guides for things left out of the core (email, OAuth, R2, AI, cron)
+docs/CONVENTIONS.md       # code style: formatting, naming, import order, comments, tests, git
 app/db/schema.ts          # app tables (Drizzle). auth-schema.ts is Better Auth's — never edit by hand
 drizzle/                  # generated SQL migrations (committed)
 tests/                    # vitest-pool-workers specs
@@ -91,9 +94,21 @@ Pages must render fast. Every new page follows these:
 5. **Confirmations are toasts, problems are Alerts.** `useToastOnChange(actionData?.message)` announces a success once per result through the `aria-live` region; anything the user must act on stays on the page.
 6. **Multiple forms on one page** share a single action, switched on a hidden `intent` field — see `app/routes/settings.tsx`. Row-level actions use `useFetcher` so the page does not navigate.
 7. **Pending state.** The root already renders a global progress bar from `useNavigation()`. For submit buttons, disable and relabel using `useNavigation().formAction === "/your-route"` (or `navigation.formData?.get("intent")` when the page has several forms).
-10. **Empty lists render `<EmptyState>`**, never a bare empty `<ul>`. Streaming fallbacks use `<Skeleton>` sized like the real content so the shell does not shift.
-11. **Accessibility is not optional.** Icons get `aria-hidden`; icon-only buttons get `aria-label`; **each page renders exactly one `<h1>`** (`<CardTitle as="h1">` when the card is the page); nav links use `NavLink` so the active state is real. Anything that overlays the page — drawers, dialogs — must close on Escape, take focus on open, trap Tab, and return focus to its trigger.
-12. **Adding a shadcn component is allowed** when a primitive is genuinely missing: `bunx shadcn@latest add <name>` works — the tokens already match. Weigh the client-bundle cost first; Radix-backed overlays (dialog, select, dropdown, popover) pull in extra dependencies.
+8. **Empty lists render `<EmptyState>`**, never a bare empty `<ul>`. Streaming fallbacks use `<Skeleton>` sized like the real content so the shell does not shift.
+9. **Accessibility is not optional.** Icons get `aria-hidden`; icon-only buttons get `aria-label`; **each page renders exactly one `<h1>`** (`<CardTitle as="h1">` when the card is the page); nav links use `NavLink` so the active state is real. Anything that overlays the page — drawers, dialogs — must close on Escape, take focus on open, trap Tab, and return focus to its trigger.
+10. **Adding a shadcn component is allowed** when a primitive is genuinely missing: `bunx shadcn@latest add <name>` works — the tokens already match. Weigh the client-bundle cost first; Radix-backed overlays (dialog, select, dropdown, popover) pull in extra dependencies.
+
+## Code conventions (summary — full rules in [docs/CONVENTIONS.md](./docs/CONVENTIONS.md))
+
+1. **Formatting**: 2-space indent, double quotes, semicolons, trailing commas, wrap around 80 (100 max). No formatter is configured — match the neighbouring code.
+2. **Naming**: kebab-case files; `.server.ts` / `.client.ts` suffixes for one-sided modules; `api.<name>.tsx` for resource routes; PascalCase components/types, camelCase functions, UPPER_SNAKE constants; booleans read as predicates (`submitting`, `hasGoogle`).
+3. **Imports**: relative paths only (the `~/*` alias is unused); order react → react-router → third-party → `../lib` → `../db` → `../components` → `./+types` last; `import type` for types; named exports everywhere except a route's default component; no barrel files.
+4. **Route module order**: `meta` → `middleware` → `loader` → action helpers → `action` → local components → `export default` page. Loaders `throw redirect()`, actions `return redirect()`.
+5. **Types**: `interface` for props and contracts, `type` for unions/derived; `as const` lookup tables with `keyof typeof`; no `any`, no `@ts-ignore`; `!` only on `context.get(…)`.
+6. **Comments explain why, not what.** Every exported symbol gets a JSDoc naming the reason or the trap; deliberate-looking-wrong code gets an inline `// … on purpose` note. No commented-out code.
+7. **Logging**: `console.error("[module] what happened:", error)`. Rate limiting fails open, auth fails closed — say which in a comment.
+8. **Tests**: `tests/<feature>.spec.ts`, `describe`/`it` in plain sentences, `SELF.fetch` through the route, assert status/`Location`/`Set-Cookie`, regression tests start with a comment naming the bug.
+9. **Git**: Conventional Commits (`feat(scope): lowercase imperative`, ≤ 72 chars); one logical change per commit; schema + migration + test travel together.
 
 ## Constraints
 
