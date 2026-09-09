@@ -118,6 +118,7 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   return (
     <main
       id="main"
+      tabIndex={-1}
       className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 text-center"
     >
       <p className="font-mono text-sm text-muted-foreground">{status}</p>

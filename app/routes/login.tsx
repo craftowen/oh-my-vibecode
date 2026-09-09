@@ -20,14 +20,17 @@ export const meta: Route.MetaFunction = () => [{ title: "Log in · oh-my-vibecod
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { env } = context.get(cloudflareContext)!;
   const auth = buildAuth(env);
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (session) throw redirect("/dashboard");
+  const { response: session, headers } = await auth.api.getSession({
+    headers: request.headers,
+    returnHeaders: true,
+  });
+  if (session) throw redirect("/dashboard", { headers });
 
   const url = new URL(request.url);
-  return {
+  return data({
     hasGoogle: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
     justReset: url.searchParams.has("reset"),
-  };
+  }, { headers });
 }
 
 /**

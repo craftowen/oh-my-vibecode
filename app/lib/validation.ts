@@ -30,6 +30,8 @@ export function field(form: FormData, name: string): string {
 export function safeRedirect(to: unknown, fallback = "/"): string {
   if (typeof to !== "string" || to === "") return fallback;
   if (!to.startsWith("/")) return fallback;
+  // URL parsers strip tabs/newlines before resolving the host.
+  if (/[\u0000-\u001f\u007f]/.test(to)) return fallback;
   if (to.startsWith("//") || to.startsWith("/\\")) return fallback;
   return to;
 }

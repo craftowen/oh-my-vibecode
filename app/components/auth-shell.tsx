@@ -25,11 +25,12 @@ export function AuthShell({
   return (
     <main
       id="main"
+      tabIndex={-1}
       className="flex min-h-screen items-center justify-center bg-muted/40 px-4 py-12"
     >
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">
-          <Link to="/" className="text-lg font-semibold tracking-tight">
+          <Link to="/" prefetch="intent" className="text-lg font-semibold tracking-tight">
             oh-my-vibecode
           </Link>
         </div>

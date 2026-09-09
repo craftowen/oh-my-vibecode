@@ -29,9 +29,12 @@ const DEMO = {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const auth = buildAuth(context.get(cloudflareContext)!.env);
-  const session = await auth.api.getSession({ headers: request.headers });
-  if (session) throw redirect("/dashboard");
-  return null;
+  const { response: session, headers } = await auth.api.getSession({
+    headers: request.headers,
+    returnHeaders: true,
+  });
+  if (session) throw redirect("/dashboard", { headers });
+  return data(null, { headers });
 }
 
 export async function action({ request, context }: Route.ActionArgs) {

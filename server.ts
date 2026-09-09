@@ -10,6 +10,19 @@ export default {
     // the inline theme script can be allow-listed by the CSP below.
     const nonce = crypto.randomUUID().replaceAll("-", "");
 
+    // Route actions call auth.api directly, bypassing Better Auth's HTTP CSRF
+    // checks. Keep browser mutations same-origin; its own API owns OAuth checks.
+    const url = new URL(request.url);
+    const origin = request.headers.get("Origin");
+    if (
+      !["GET", "HEAD", "OPTIONS"].includes(request.method) &&
+      !url.pathname.startsWith("/api/auth/") &&
+      ((origin !== null && origin !== url.origin) ||
+        request.headers.get("Sec-Fetch-Site") === "cross-site")
+    ) {
+      return withSecurityHeaders(request, new Response("Forbidden", { status: 403 }), nonce);
+    }
+
     const context = new RouterContextProvider();
     context.set(cloudflareContext, { env, ctx });
     context.set(nonceContext, nonce);

@@ -1,7 +1,7 @@
 import { Suspense, use } from "react";
 import { Link, useLoaderData } from "react-router";
 import { drizzle } from "drizzle-orm/d1";
-import { count } from "drizzle-orm";
+import { count, gt } from "drizzle-orm";
 import { ArrowRight, KeyRound, Users } from "lucide-react";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
@@ -39,7 +39,7 @@ export async function loader({ context }: Route.LoaderArgs) {
   // NOT awaited on purpose — replace with your real (possibly slow) queries.
   const stats = Promise.all([
     db.select({ value: count() }).from(user),
-    db.select({ value: count() }).from(sessionTable),
+    db.select({ value: count() }).from(sessionTable).where(gt(sessionTable.expiresAt, new Date())),
   ]).then(([users, sessions]) => ({
     users: users[0]?.value ?? 0,
     sessions: sessions[0]?.value ?? 0,

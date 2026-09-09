@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/d1";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { rateLimit } from "../db/schema";
 
 /**
@@ -13,9 +13,8 @@ import { rateLimit } from "../db/schema";
  * The counters live in the same `rateLimit` table Better Auth uses, so there is
  * one place to inspect and one migration to run.
  *
- * Note: D1 has no cross-statement transaction here, so two requests arriving in
- * the same millisecond can both read the same count. That is acceptable for
- * throttling (worst case one extra attempt) but it is not a quota system.
+ * A single upsert consumes each attempt atomically, including the first request
+ * and a window reset. Concurrent requests cannot overwrite each other's count.
  */
 export interface RateLimitRule {
   /** Window length in seconds. */
@@ -49,45 +48,26 @@ export async function consumeRateLimit(
   const windowMs = rule.window * 1000;
 
   try {
-    const [existing] = await db
-      .select()
-      .from(rateLimit)
-      .where(eq(rateLimit.key, key))
-      .limit(1);
+    const expired = sql`${rateLimit.lastRequest} <= ${now - windowMs}`;
+    const [counter] = await db
+      .insert(rateLimit)
+      .values({ id: crypto.randomUUID(), key, count: 1, lastRequest: now })
+      .onConflictDoUpdate({
+        target: rateLimit.key,
+        set: {
+          count: sql`CASE WHEN ${expired} THEN 1 ELSE min(${rateLimit.count} + 1, ${rule.max + 1}) END`,
+          lastRequest: sql`CASE WHEN ${expired} THEN ${now} ELSE ${rateLimit.lastRequest} END`,
+        },
+      })
+      .returning({ count: rateLimit.count, lastRequest: rateLimit.lastRequest });
 
-    if (!existing) {
-      await db
-        .insert(rateLimit)
-        .values({ id: crypto.randomUUID(), key, count: 1, lastRequest: now })
-        .onConflictDoUpdate({
-          target: rateLimit.key,
-          set: { count: 1, lastRequest: now },
-        });
-      return { allowed: true, retryAfter: 0 };
-    }
-
-    const elapsed = now - existing.lastRequest;
-    if (elapsed > windowMs) {
-      // Window expired — start a fresh one.
-      await db
-        .update(rateLimit)
-        .set({ count: 1, lastRequest: now })
-        .where(eq(rateLimit.key, key));
-      return { allowed: true, retryAfter: 0 };
-    }
-
-    if (existing.count >= rule.max) {
-      return {
-        allowed: false,
-        retryAfter: Math.max(1, Math.ceil((windowMs - elapsed) / 1000)),
-      };
-    }
-
-    await db
-      .update(rateLimit)
-      .set({ count: existing.count + 1 })
-      .where(eq(rateLimit.key, key));
-    return { allowed: true, retryAfter: 0 };
+    const allowed = counter.count <= rule.max;
+    return {
+      allowed,
+      retryAfter: allowed
+        ? 0
+        : Math.max(1, Math.ceil((counter.lastRequest + windowMs - now) / 1000)),
+    };
   } catch (error) {
     // Never lock people out of signing in because the counter table misbehaved.
     console.error("[rate-limit] check failed, allowing request:", error);

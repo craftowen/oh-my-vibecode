@@ -1,9 +1,14 @@
+import { Suspense, use } from "react";
 import { Form, data, useFetcher, useNavigation } from "react-router";
+import { and, eq, gt } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/d1";
 import { Monitor, ShieldCheck, ShieldAlert } from "lucide-react";
 import { buildAuth } from "../lib/auth.server";
 import { authErrorMessage } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
+import { limitAuthAttempt } from "../lib/rate-limit.server";
+import { session as sessionTable } from "../db/auth-schema";
 import { MAX_NAME_LENGTH, field } from "../lib/validation";
 import { EmptyState } from "../components/empty-state";
 import { LocalTime } from "../components/local-time";
@@ -12,6 +17,7 @@ import { Field } from "../components/field";
 import { Alert } from "../components/ui/alert";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Skeleton } from "../components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -25,12 +31,16 @@ export const meta: Route.MetaFunction = () => [
   { title: "Settings · oh-my-vibecode" },
 ];
 
-export async function loader({ request, context }: Route.LoaderArgs) {
+export async function loader({ context }: Route.LoaderArgs) {
   // The profile comes from the session authMiddleware already resolved — no
-  // second round-trip. Only listSessions actually needs to hit the DB.
+  // second session lookup. Start the device query without blocking the profile.
   const session = context.get(sessionContext)!;
-  const auth = buildAuth(context.get(cloudflareContext)!.env);
-  const sessions = await auth.api.listSessions({ headers: request.headers });
+  const { env } = context.get(cloudflareContext)!;
+  const sessions = drizzle(env.DB)
+    .select()
+    .from(sessionTable)
+    .where(and(eq(sessionTable.userId, session.user.id), gt(sessionTable.expiresAt, new Date())))
+    .then((rows) => rows);
 
   return {
     user: session.user,
@@ -79,7 +89,14 @@ export async function action({ request, context }: Route.ActionArgs) {
       }
 
       case "resend-verification": {
-        const email = field(form, "email");
+        const limit = await limitAuthAttempt(
+          context.get(cloudflareContext)!.env,
+          request,
+          "resend-verification",
+          { window: 300, max: 5 },
+        );
+        if (limit.blocked) return fail({ form: limit.message }, 429);
+        const email = context.get(sessionContext)!.user.email;
         await auth.api.sendVerificationEmail({
           body: { email, callbackURL: "/verify-email" },
           headers: request.headers,
@@ -101,7 +118,7 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
   const errors = actionData?.errors ?? {};
 
   // Successful actions announce themselves through the toast region.
-  useToastOnChange(actionData?.message);
+  useToastOnChange(actionData?.message, "success", actionData);
 
   const savingProfile =
     navigation.formData?.get("intent") === "update-profile";
@@ -167,79 +184,93 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
             </div>
             {!user.emailVerified && (
               <div className="pt-1">
-                <ResendVerification email={user.email} />
+                <ResendVerification />
               </div>
             )}
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Active sessions</CardTitle>
-          <CardDescription>
-            {sessions.length} {sessions.length === 1 ? "device" : "devices"} signed in.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {sessions.length === 0 ? (
-            <EmptyState
-              icon={Monitor}
-              title="No active sessions"
-              description="Sessions appear here as you sign in from other devices."
-            />
-          ) : (
-            <ul className="divide-y rounded-lg border">
-              {sessions.map((item) => {
-                const isCurrent = item.token === currentSessionToken;
-                return (
-                  <li
-                    key={item.id}
-                    className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start"
-                  >
-                    <Monitor
-                      className="mt-0.5 hidden size-4 shrink-0 text-muted-foreground sm:block"
-                      aria-hidden
-                    />
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p
-                          className="min-w-0 flex-1 truncate text-sm font-medium"
-                          title={item.userAgent || undefined}
-                        >
-                          {item.userAgent || "Unknown device"}
-                        </p>
-                        {isCurrent && <Badge variant="secondary">This device</Badge>}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {item.ipAddress || "no IP"} · signed in{" "}
-                        <LocalTime value={item.createdAt} />
-                      </p>
-                    </div>
-                    {!isCurrent && (
-                      <div className="flex shrink-0 justify-end">
-                        <RevokeSessionButton token={item.token} />
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+        <SessionsCard sessions={sessions} currentSessionToken={currentSessionToken} />
+      </Suspense>
     </div>
+  );
+}
+
+function SessionsCard({ sessions: pending, currentSessionToken }: {
+  sessions: Promise<(typeof sessionTable.$inferSelect)[]>;
+  currentSessionToken: string;
+}) {
+  const sessions = use(pending);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Active sessions</CardTitle>
+        <CardDescription>
+          {sessions.length} {sessions.length === 1 ? "device" : "devices"} signed in.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {sessions.length === 0 ? (
+          <EmptyState
+            icon={Monitor}
+            title="No active sessions"
+            description="Sessions appear here as you sign in from other devices."
+          />
+        ) : (
+          <ul className="divide-y rounded-lg border">
+            {sessions.map((item) => {
+              const isCurrent = item.token === currentSessionToken;
+              return (
+                <li
+                  key={item.id}
+                  className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start"
+                >
+                  <Monitor
+                    className="mt-0.5 hidden size-4 shrink-0 text-muted-foreground sm:block"
+                    aria-hidden
+                  />
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p
+                        className="min-w-0 flex-1 truncate text-sm font-medium"
+                        title={item.userAgent || undefined}
+                      >
+                        {item.userAgent || "Unknown device"}
+                      </p>
+                      {isCurrent && <Badge variant="secondary">This device</Badge>}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {item.ipAddress || "no IP"} · signed in{" "}
+                      <LocalTime value={item.createdAt} />
+                    </p>
+                  </div>
+                  {!isCurrent && (
+                    <div className="flex shrink-0 justify-end">
+                      <RevokeSessionButton token={item.token} />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
 /** Revoking is a fetcher submit so the page (and the rest of the list) never
  * re-navigates — only this row's button shows progress. */
 function RevokeSessionButton({ token }: { token: string }) {
-  const fetcher = useFetcher();
+  const fetcher = useFetcher<typeof action>();
   const busy = fetcher.state !== "idle";
+  useToastOnChange(fetcher.data?.message, "success", fetcher.data);
 
   return (
     <fetcher.Form method="post">
+      {fetcher.data?.errors.form && <Alert variant="destructive">{fetcher.data.errors.form}</Alert>}
       <input type="hidden" name="intent" value="revoke-session" />
       <input type="hidden" name="token" value={token} />
       <Button type="submit" variant="ghost" size="sm" disabled={busy}>
@@ -249,14 +280,15 @@ function RevokeSessionButton({ token }: { token: string }) {
   );
 }
 
-function ResendVerification({ email }: { email: string }) {
-  const fetcher = useFetcher();
+function ResendVerification() {
+  const fetcher = useFetcher<typeof action>();
   const busy = fetcher.state !== "idle";
+  useToastOnChange(fetcher.data?.message, "success", fetcher.data);
 
   return (
     <fetcher.Form method="post">
+      {fetcher.data?.errors.form && <Alert variant="destructive">{fetcher.data.errors.form}</Alert>}
       <input type="hidden" name="intent" value="resend-verification" />
-      <input type="hidden" name="email" value={email} />
       <Button type="submit" variant="outline" size="sm" disabled={busy}>
         {busy ? "Sending…" : "Resend verification email"}
       </Button>

@@ -1,4 +1,6 @@
-import { Link } from "react-router";
+import { Link, data } from "react-router";
+import { buildAuth } from "../lib/auth.server";
+import { cloudflareContext } from "../lib/app-context";
 import { CheckCircle2, MailWarning } from "lucide-react";
 import { AuthShell } from "../components/auth-shell";
 import { Alert } from "../components/ui/alert";
@@ -14,9 +16,17 @@ export const meta: Route.MetaFunction = () => [
  * token at `/api/auth/verify-email` and then redirects here with the outcome,
  * so this route only reports what happened.
  */
-export function loader({ request }: Route.LoaderArgs) {
+export async function loader({ request, context }: Route.LoaderArgs) {
   const url = new URL(request.url);
-  return { error: url.searchParams.get("error") };
+  if (url.searchParams.has("error")) {
+    return data({ error: url.searchParams.get("error") || "INVALID_TOKEN" });
+  }
+  const auth = buildAuth(context.get(cloudflareContext)!.env);
+  const { response: session, headers } = await auth.api.getSession({
+    headers: request.headers,
+    returnHeaders: true,
+  });
+  return data({ error: session?.user.emailVerified ? null : "NOT_VERIFIED" }, { headers });
 }
 
 export default function VerifyEmail({ loaderData }: Route.ComponentProps) {

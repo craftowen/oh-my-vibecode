@@ -40,21 +40,27 @@ changes:
 ```ts
 // app/lib/email.server.ts
 export async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
-  const response = await fetch("https://api.postmarkapp.com/email", {
-    method: "POST",
-    headers: {
-      "X-Postmark-Server-Token": env.POSTMARK_TOKEN,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      From: env.EMAIL_FROM,
-      To: message.to,
-      Subject: message.subject,
-      TextBody: message.text,
-      HtmlBody: message.html,
-    }),
-  });
-  if (!response.ok) console.error("[email] failed:", await response.text());
+  try {
+    const response = await fetch("https://api.postmarkapp.com/email", {
+      method: "POST",
+      headers: {
+        "X-Postmark-Server-Token": env.POSTMARK_TOKEN,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        From: env.EMAIL_FROM,
+        To: message.to,
+        Subject: message.subject,
+        TextBody: message.text,
+        HtmlBody: message.html,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) console.error(`[email] failed (${response.status})`);
+    await response.body?.cancel();
+  } catch (error) {
+    console.error("[email] failed:", error);
+  }
 }
 ```
 
@@ -63,9 +69,10 @@ Two rules worth keeping:
 1. **Never throw out of `sendEmail`.** A provider outage must not turn a
    successful signup into an error page — log it and let the user request a
    resend from Settings.
-2. **Don't `await` it inside auth hooks if latency matters.** Better Auth's docs
-   suggest `void sendEmail(...)` so response time does not leak whether an
-   address exists.
+2. **Keep delivery attached to the request lifecycle.** Await it as the current
+   hooks do. To send after the response, pass the promise to the current request's
+   `ctx.waitUntil()`; a bare `void sendEmail(...)` can be interrupted when the
+   Worker finishes the response. See [Cloudflare's context documentation](https://developers.cloudflare.com/workers/runtime-apis/context/#waituntil).
 
 ## Requiring verified email
 

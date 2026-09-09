@@ -52,7 +52,8 @@ export async function loader({ context }: Route.LoaderArgs) {
     .select()
     .from(note)
     .where(eq(note.userId, session.user.id))
-    .orderBy(desc(note.createdAt));
+    .orderBy(desc(note.createdAt))
+    .then((rows) => rows);
 
   return { notes };
 }

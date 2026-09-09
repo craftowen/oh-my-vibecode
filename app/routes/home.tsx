@@ -80,6 +80,7 @@ export default function Home() {
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <a
               href={REPO}
+              aria-label="GitHub"
               target="_blank"
               rel="noreferrer noopener"
               className={buttonStyles({ variant: "ghost", size: "sm" })}
@@ -98,7 +99,7 @@ export default function Home() {
         </nav>
       </header>
 
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         {/* Hero */}
         <section className="relative overflow-hidden border-b">
           <div

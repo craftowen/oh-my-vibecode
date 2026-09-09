@@ -23,10 +23,17 @@ export const authMiddleware = async (
 ): Promise<Response> => {
   const { env } = context.get(cloudflareContext)!;
   const auth = buildAuth(env);
-  const session = await auth.api.getSession({ headers: request.headers });
+  const { response: session, headers } = await auth.api.getSession({
+    headers: request.headers,
+    returnHeaders: true,
+  });
   if (!session) {
-    throw redirect("/login");
+    throw redirect("/login", { headers });
   }
   context.set(sessionContext, session);
-  return next();
+  const response = await next();
+  for (const cookie of headers.getSetCookie()) {
+    response.headers.append("Set-Cookie", cookie);
+  }
+  return response;
 };

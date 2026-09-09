@@ -66,22 +66,24 @@ export function useToast(): ToastContextValue {
 
 /**
  * Shows a toast once per distinct action result. Pass the message your action
- * returned; re-renders with the same message do not re-fire.
+ * returned and optionally the action/fetcher result itself, so repeated
+ * successful submissions announce even when their message is unchanged.
  */
 export function useToastOnChange(
   message: string | undefined,
   variant: ToastVariant = "success",
+  result: unknown = message,
 ) {
   const { toast } = useToast();
-  const lastShown = useRef<string | undefined>(undefined);
+  const lastShown = useRef<unknown>(undefined);
 
   useEffect(() => {
-    if (message && message !== lastShown.current) {
-      lastShown.current = message;
+    if (message && result !== lastShown.current) {
+      lastShown.current = result;
       toast(message, variant);
     }
     if (!message) lastShown.current = undefined;
-  }, [message, variant, toast]);
+  }, [message, variant, result, toast]);
 }
 
 const ICONS = {
