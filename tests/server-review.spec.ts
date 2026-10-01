@@ -1,10 +1,8 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { env, SELF } from "cloudflare:test";
 import { consumeRateLimit } from "../app/lib/rate-limit.server";
 import { actionEmail, sendEmail } from "../app/lib/email.server";
-import { setupDb } from "./setup-db";
 
-beforeAll(() => setupDb(env));
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -78,7 +76,12 @@ describe("email delivery failures", () => {
 
 it("gives every streamed inline script the response CSP nonce", async () => {
   const response = await SELF.fetch("http://localhost/");
-  const nonce = response.headers.get("Content-Security-Policy")?.match(/'nonce-([^']+)'/)?.[1];
+  const csp = response.headers.get("Content-Security-Policy");
+  // Only production builds carry the policy; vitest runs the production
+  // bundle, so it must be here.
+  expect(csp).toContain("frame-ancestors 'none'");
+  expect(csp).toContain("object-src 'none'");
+  const nonce = csp?.match(/'nonce-([^']+)'/)?.[1];
   expect(nonce).toBeTruthy();
   const html = await response.text();
   const scripts = [...html.matchAll(/<script\b([^>]*)>/g)];
@@ -115,6 +118,17 @@ describe("browser mutation origins", () => {
     expect(response.status).toBe(403);
     expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(response.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
+  // Non-browser clients send no Origin; only a mismatched one is refused.
+  it("admits a mutation that carries no Origin header", async () => {
+    const response = await SELF.fetch("http://localhost/api/theme", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: "theme=dark",
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toContain("theme=dark");
   });
 
   it("preserves a same-origin plain form submission", async () => {

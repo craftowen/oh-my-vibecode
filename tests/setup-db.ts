@@ -1,4 +1,5 @@
-import { applyD1Migrations } from "cloudflare:test";
+import { beforeAll } from "vitest";
+import { applyD1Migrations, env } from "cloudflare:test";
 
 /**
  * Every committed migration, discovered automatically and applied in filename
@@ -21,6 +22,7 @@ const MIGRATIONS = Object.entries(modules)
       .filter(Boolean),
   }));
 
-export async function setupDb(env: { DB: D1Database }) {
-  await applyD1Migrations(env.DB, MIGRATIONS);
-}
+// Registered as a vitest setup file, so this runs before every spec file —
+// no spec can forget it, and no describe can lean on another having run first.
+// applyD1Migrations is idempotent, so the per-file repeat is safe.
+beforeAll(() => applyD1Migrations(env.DB, MIGRATIONS));

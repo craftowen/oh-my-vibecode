@@ -1,35 +1,9 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { setupDb } from "./setup-db";
+import { cookieHeader, formPost, signUp } from "./helpers";
 
 /** Password reset, profile editing and session management — the flows a real
  * account needs beyond signing in. */
-
-function formPost(path: string, fields: Record<string, string>, cookie?: string) {
-  return new Request(`http://localhost${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      ...(cookie ? { Cookie: cookie } : {}),
-    },
-    body: new URLSearchParams(fields).toString(),
-    redirect: "manual",
-  });
-}
-
-function cookieHeader(response: Response): string {
-  return response.headers
-    .getSetCookie()
-    .map((cookie) => cookie.split(";")[0])
-    .join("; ");
-}
-
-async function signUp(email: string, password = "password1234") {
-  const res = await SELF.fetch(
-    formPost("/signup", { name: "Test Person", email, password }),
-  );
-  return cookieHeader(res);
-}
 
 /** Better Auth stores the reset token as `reset-password:<token>`. */
 async function latestResetToken(): Promise<string> {
@@ -40,10 +14,6 @@ async function latestResetToken(): Promise<string> {
 }
 
 describe("password reset", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("answers the same way whether or not the address exists", async () => {
     const known = await SELF.fetch(
       formPost("/forgot-password", { email: "nobody@example.com" }),
@@ -116,10 +86,6 @@ describe("password reset", () => {
 });
 
 describe("settings actions", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("updates the display name", async () => {
     const cookie = await signUp("rename@example.com");
 

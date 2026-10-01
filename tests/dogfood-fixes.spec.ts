@@ -1,71 +1,39 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { env, SELF } from "cloudflare:test";
-import { setupDb } from "./setup-db";
+import { describe, it, expect } from "vitest";
+import { SELF } from "cloudflare:test";
 import { safeRedirect } from "../app/lib/validation";
+import { formPost, signUp } from "./helpers";
 
 /** Regressions for the issues found in the dogfood pass. */
 
-function formPost(path: string, fields: Record<string, string>, cookie?: string) {
-  return new Request(`http://localhost${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      ...(cookie ? { Cookie: cookie } : {}),
-    },
-    body: new URLSearchParams(fields).toString(),
-    redirect: "manual",
-  });
-}
-
-function cookieHeader(response: Response): string {
-  return response.headers
-    .getSetCookie()
-    .map((cookie) => cookie.split(";")[0])
-    .join("; ");
-}
-
-async function signUp(email: string, name = "Test Person") {
-  const res = await SELF.fetch(
-    formPost("/signup", { name, email, password: "password1234" }),
-  );
-  return cookieHeader(res);
-}
-
 describe("ISSUE-006 — open redirect", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
-  it("rejects protocol-relative targets", () => {
-    // The original bug: "//evil.example.com" starts with "/" and slipped past.
-    expect(safeRedirect("//evil.example.com/x")).toBe("/");
-    expect(safeRedirect("/\\evil.example.com/x")).toBe("/");
-    expect(safeRedirect("https://evil.example.com/x")).toBe("/");
-    expect(safeRedirect("javascript:alert(1)")).toBe("/");
-    expect(safeRedirect("")).toBe("/");
-    expect(safeRedirect(null)).toBe("/");
-  });
-
-  it("keeps ordinary in-app paths", () => {
-    expect(safeRedirect("/settings")).toBe("/settings");
-    expect(safeRedirect("/dashboard?tab=1")).toBe("/dashboard?tab=1");
+  it("keeps in-app paths and turns every off-origin target into /", () => {
+    const cases: [string | null, string][] = [
+      // The original bug: "//evil.example.com" starts with "/" and slipped past.
+      ["//evil.example.com/x", "/"],
+      ["/\\evil.example.com/x", "/"],
+      // URL parsing strips tab/newline/CR, turning "/\t/evil" into "//evil".
+      ["/\t/evil.example/path", "/"],
+      ["/\n/evil.example/path", "/"],
+      ["/\r/evil.example/path", "/"],
+      ["https://evil.example.com/x", "/"],
+      ["javascript:alert(1)", "/"],
+      ["", "/"],
+      [null, "/"],
+      ["/settings", "/settings"],
+      ["/dashboard?tab=1", "/dashboard?tab=1"],
+    ];
+    for (const [target, expected] of cases) {
+      expect(safeRedirect(target), JSON.stringify(target)).toBe(expected);
+    }
   });
 
   it("never sends the visitor off-origin from /api/theme", async () => {
-    const res = await SELF.fetch(
-      new Request("http://localhost/api/theme", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Sec-Fetch-Mode": "navigate",
-        },
-        body: new URLSearchParams({
-          theme: "dark",
-          redirectTo: "//evil.example.com/pwned",
-        }).toString(),
-        redirect: "manual",
-      }),
-    );
+    const request = formPost("/api/theme", {
+      theme: "dark",
+      redirectTo: "//evil.example.com/pwned",
+    });
+    request.headers.set("Sec-Fetch-Mode", "navigate");
+    const res = await SELF.fetch(request);
 
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/");
@@ -73,10 +41,6 @@ describe("ISSUE-006 — open redirect", () => {
 });
 
 describe("ISSUE-002 — resource route answers GET", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("returns 405 with an Allow header, not a framework error", async () => {
     const res = await SELF.fetch(new Request("http://localhost/api/theme"));
 
@@ -87,10 +51,6 @@ describe("ISSUE-002 — resource route answers GET", () => {
 });
 
 describe("ISSUE-005 — name length", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("rejects an over-long name at signup", async () => {
     const res = await SELF.fetch(
       formPost("/signup", {
@@ -120,10 +80,6 @@ describe("ISSUE-005 — name length", () => {
 });
 
 describe("ISSUE-008 — signed-out pages expose a heading", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   for (const path of ["/login", "/signup", "/forgot-password", "/verify-email"]) {
     it(`${path} renders exactly one <h1>`, async () => {
       const html = await (await SELF.fetch(new Request(`http://localhost${path}`))).text();
@@ -134,10 +90,6 @@ describe("ISSUE-008 — signed-out pages expose a heading", () => {
 });
 
 describe("ISSUE-009 — dates render deterministically on the server", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("emits a fixed UTC string and a machine-readable datetime", async () => {
     const cookie = await signUp("dates@example.com");
     const html = await (
@@ -158,10 +110,6 @@ describe("ISSUE-009 — dates render deterministically on the server", () => {
 });
 
 describe("ISSUE-009b — no nested <form>", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("settings does not render a form inside a form", async () => {
     const cookie = await signUp("nested-form@example.com");
     const html = await (

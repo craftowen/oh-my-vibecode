@@ -1,64 +1,25 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { setupDb } from "./setup-db";
-import { safeRedirect } from "../app/lib/validation";
+import { formPost, signUp } from "./helpers";
 
-function formPost(path: string, fields: Record<string, string>, cookie = "") {
-  return new Request(`http://localhost${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Origin: "http://localhost",
-      "CF-Connecting-IP": "203.0.113.180",
-      ...(cookie ? { Cookie: cookie } : {}),
-    },
-    body: new URLSearchParams(fields),
-    redirect: "manual",
-  });
-}
-
-async function signUp(email: string) {
-  const response = await SELF.fetch(
-    formPost("/signup", { name: "Auth Review", email, password: "password1234" }),
-  );
-  expect(response.status).toBe(302);
-  return response.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; ");
-}
+// Its own client address keeps this file's signups out of the shared
+// "unknown" rate-limit bucket.
+const IP = "203.0.113.180";
 
 describe("auth review regressions", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
-  it("blocks redirect targets that become another origin after URL normalization", async () => {
-    for (const control of ["\t", "\n", "\r"]) {
-      const target = `/${control}/evil.example/path`;
-      expect(new URL(target, "https://local.example").origin).toBe("https://evil.example");
-      expect(safeRedirect(target)).toBe("/");
-    }
-    const request = formPost("/api/theme", {
-      theme: "dark",
-      redirectTo: "/\t/evil.example/path",
-    });
-    request.headers.set("Sec-Fetch-Mode", "navigate");
-    const response = await SELF.fetch(request);
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/");
-  });
-
   it("limits verification resend forms and derives the recipient from the session", async () => {
-    const cookie = await signUp("auth-review-resend@example.com");
+    const cookie = await signUp("auth-review-resend@example.com", IP);
     for (let attempt = 0; attempt < 5; attempt++) {
       const response = await SELF.fetch(formPost("/settings", {
         intent: "resend-verification",
         email: "tampered@example.com",
-      }, cookie));
+      }, cookie, IP));
       expect(response.status).toBe(200);
       expect(await response.text()).toContain("Verification email sent.");
     }
     const blocked = await SELF.fetch(formPost("/settings", {
       intent: "resend-verification",
-    }, cookie));
+    }, cookie, IP));
     expect(blocked.status).toBe(429);
     expect(await blocked.text()).toContain("Too many attempts");
   });
@@ -67,7 +28,7 @@ describe("auth review regressions", () => {
     const anonymous = await SELF.fetch(new Request("http://localhost/verify-email"));
     expect(await anonymous.text()).toContain("We could not verify this address.");
 
-    const cookie = await signUp("auth-review-unverified@example.com");
+    const cookie = await signUp("auth-review-unverified@example.com", IP);
     const unverified = await SELF.fetch(new Request("http://localhost/verify-email", {
       headers: { Cookie: cookie },
     }));
@@ -76,7 +37,7 @@ describe("auth review regressions", () => {
 
   it("reports verified session state while retaining explicit callback failures", async () => {
     const email = "auth-review-verified@example.com";
-    const cookie = await signUp(email);
+    const cookie = await signUp(email, IP);
     await env.DB.prepare("UPDATE user SET emailVerified = 1 WHERE email = ?").bind(email).run();
     const verified = await SELF.fetch(new Request("http://localhost/verify-email", {
       headers: { Cookie: cookie },
@@ -92,7 +53,7 @@ describe("auth review regressions", () => {
   for (const path of ["/settings", "/login", "/signup", "/verify-email"]) {
     it(`forwards refreshed session cookies from ${path}`, async () => {
       const email = `auth-review-refresh-${path.slice(1)}@example.com`;
-      const cookie = await signUp(email);
+      const cookie = await signUp(email, IP);
       // Default sessions last seven days and refresh after one day. Put the
       // session inside its refresh window without relying on fake timers.
       const expiresAt = Math.floor(Date.now() / 1000) + 5 * 24 * 60 * 60;

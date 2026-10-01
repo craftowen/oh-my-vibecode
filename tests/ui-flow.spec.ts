@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { env, SELF } from "cloudflare:test";
-import { setupDb } from "./setup-db";
+import { describe, it, expect } from "vitest";
+import { SELF } from "cloudflare:test";
+import { cookieHeader, formPost } from "./helpers";
 
 /**
  * These exercise the routes the browser actually hits — the forms and the
@@ -14,26 +14,14 @@ const CREDENTIALS = {
   password: "password1234",
 };
 
-function formPost(path: string, fields: Record<string, string>) {
-  return new Request(`http://localhost${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(fields).toString(),
-    redirect: "manual",
-  });
-}
-
-/** Collects the cookie pairs from a response into a single Cookie header. */
-function cookieHeader(response: Response): string {
-  return response.headers
-    .getSetCookie()
-    .map((cookie) => cookie.split(";")[0])
-    .join("; ");
-}
-
 describe("UI auth flows", () => {
-  beforeAll(async () => {
-    await setupDb(env);
+  it("sends an anonymous visitor from a protected page to /login", async () => {
+    const res = await SELF.fetch(
+      new Request("http://localhost/dashboard", { redirect: "manual" }),
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("/login");
   });
 
   it("signs up through the signup form and lands on the dashboard", async () => {
@@ -107,14 +95,7 @@ describe("UI auth flows", () => {
     );
     const cookie = cookieHeader(login);
 
-    const logout = await SELF.fetch(
-      new Request("http://localhost/logout", {
-        method: "POST",
-        headers: { Cookie: cookie, "Content-Type": "application/x-www-form-urlencoded" },
-        body: "",
-        redirect: "manual",
-      }),
-    );
+    const logout = await SELF.fetch(formPost("/logout", {}, cookie));
 
     expect(logout.status).toBe(302);
     expect(logout.headers.get("location")).toBe("/login");
@@ -141,10 +122,6 @@ describe("UI auth flows", () => {
 });
 
 describe("theme", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("server-renders the dark class from the theme cookie", async () => {
     const res = await SELF.fetch(
       new Request("http://localhost/", { headers: { Cookie: "theme=dark" } }),
@@ -155,9 +132,36 @@ describe("theme", () => {
     expect(html).toMatch(/<html[^>]*class="dark"/);
   });
 
-  it("stores the theme choice as a cookie", async () => {
+  // The toggle skips revalidation and keeps the new theme from this echo, so
+  // dropping the body would make the class flip back after every click.
+  it("stores the choice as a cookie and echoes it to the fetcher", async () => {
     const res = await SELF.fetch(formPost("/api/theme", { theme: "dark" }));
 
+    expect(res.status).toBe(200);
     expect(cookieHeader(res)).toContain("theme=dark");
+    expect(await res.text()).toContain("dark");
+  });
+});
+
+describe("Better Auth HTTP API", () => {
+  // Social sign-in posts here from the browser; the kit's own forms never do,
+  // so nothing else would notice if the /api/auth action stopped answering.
+  it("serves its POST endpoints", async () => {
+    const res = await SELF.fetch(
+      new Request("http://localhost/api/auth/sign-up/email", {
+        method: "POST",
+        // No Origin on purpose: Better Auth only trusts BETTER_AUTH_URL, and a
+        // non-browser client sends none.
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Api User",
+          email: "api-auth@example.com",
+          password: "password1234",
+        }),
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(cookieHeader(res)).toContain("session_token");
   });
 });

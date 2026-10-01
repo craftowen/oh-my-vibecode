@@ -1,26 +1,12 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { setupDb } from "./setup-db";
+import { formPost } from "./helpers";
 
 function loginAttempt(email: string, password: string, ip: string) {
-  return SELF.fetch(
-    new Request("http://localhost/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "CF-Connecting-IP": ip,
-      },
-      body: new URLSearchParams({ email, password }).toString(),
-      redirect: "manual",
-    }),
-  );
+  return SELF.fetch(formPost("/login", { email, password }, undefined, ip));
 }
 
 describe("rate limiting", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("blocks password guessing after the window's allowance", async () => {
     const ip = "203.0.113.10";
     let last: Response | undefined;
@@ -58,10 +44,6 @@ describe("rate limiting", () => {
 });
 
 describe("security headers", () => {
-  beforeAll(async () => {
-    await setupDb(env);
-  });
-
   it("sets the baseline headers on HTML responses", async () => {
     const res = await SELF.fetch(new Request("http://localhost/"));
 
@@ -71,23 +53,6 @@ describe("security headers", () => {
       "strict-origin-when-cross-origin",
     );
     expect(res.headers.get("Permissions-Policy")).toContain("camera=()");
-  });
-
-  it("serves a nonce-based CSP whose nonce matches the rendered scripts", async () => {
-    const res = await SELF.fetch(new Request("http://localhost/"));
-    const csp = res.headers.get("Content-Security-Policy");
-
-    // Only production builds carry the policy; vitest runs the production
-    // bundle, so it must be here.
-    expect(csp).toContain("frame-ancestors 'none'");
-    expect(csp).toContain("object-src 'none'");
-
-    const nonce = csp?.match(/'nonce-([a-f0-9]+)'/)?.[1];
-    expect(nonce).toBeTruthy();
-
-    // If these two ever drift, every script on the page is blocked in prod.
-    const html = await res.text();
-    expect(html).toContain(`nonce="${nonce}"`);
   });
 
   it("gives each request its own nonce", async () => {

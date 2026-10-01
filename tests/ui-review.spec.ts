@@ -1,21 +1,12 @@
-import { beforeAll, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { setupDb } from "./setup-db";
-
-beforeAll(() => setupDb(env));
+import { signUp } from "./helpers";
 
 it("shows only the user's live devices and excludes expired sessions from dashboard totals", async () => {
-  const cookies: string[] = [];
-  for (const email of ["devices-owner@example.com", "devices-other@example.com"]) {
-    const response = await SELF.fetch("http://localhost/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ name: email, email, password: "password1234" }),
-      redirect: "manual",
-    });
-    expect(response.status).toBe(302);
-    cookies.push(response.headers.getSetCookie().map((cookie) => cookie.split(";")[0]).join("; "));
-  }
+  const cookies = [
+    await signUp("devices-owner@example.com"),
+    await signUp("devices-other@example.com"),
+  ];
   await env.DB.prepare(
     "UPDATE session SET userAgent = 'Other account device' WHERE userId = (SELECT id FROM user WHERE email = ?)",
   ).bind("devices-other@example.com").run();
@@ -34,6 +25,6 @@ it("shows only the user's live devices and excludes expired sessions from dashbo
   expect(html).not.toContain("expired-token");
 
   const dashboard = await SELF.fetch("http://localhost/dashboard", { headers: { Cookie: cookies[0] } });
-  const stats = [...(await dashboard.text()).matchAll(/class="text-3xl font-semibold tabular-nums">(\d+)<\/span>/g)];
+  const stats = [...(await dashboard.text()).matchAll(/data-stat="\w+"[^>]*>(\d+)</g)];
   expect(stats.map((match) => Number(match[1]))).toEqual([2, 2]);
 });

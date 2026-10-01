@@ -52,7 +52,12 @@ type Stats = { users: number; sessions: number };
 
 function StatValue({ promise, pick }: { promise: Promise<Stats>; pick: keyof Stats }) {
   const stats = use(promise); // React 19: suspends until the promise resolves
-  return <span className="text-3xl font-semibold tabular-nums">{stats[pick]}</span>;
+  return (
+    // data-stat is the hook tests read the value by, so restyling stays free.
+    <span data-stat={pick} className="text-3xl font-semibold tabular-nums">
+      {stats[pick]}
+    </span>
+  );
 }
 
 function StatSkeleton() {
