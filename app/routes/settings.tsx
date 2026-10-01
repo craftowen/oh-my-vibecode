@@ -9,7 +9,7 @@ import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
 import { session as sessionTable } from "../db/auth-schema";
-import { MAX_NAME_LENGTH, field } from "../lib/validation";
+import { MAX_NAME_LENGTH, field, type FormErrors } from "../lib/validation";
 import { EmptyState } from "../components/empty-state";
 import { LocalTime } from "../components/local-time";
 import { useToastOnChange } from "../components/toast";
@@ -50,10 +50,10 @@ export async function loader({ context }: Route.LoaderArgs) {
 }
 
 /** What every branch of the action returns, so `actionData` has one shape. */
-type ActionResult = { errors: Record<string, string>; message?: string };
+type ActionResult = { errors: FormErrors; message?: string };
 
 const ok = (message: string): ActionResult => ({ errors: {}, message });
-const fail = (errors: Record<string, string>, status = 400) =>
+const fail = (errors: FormErrors, status = 400) =>
   data<ActionResult>({ errors }, { status });
 
 /**

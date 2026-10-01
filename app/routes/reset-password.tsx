@@ -1,6 +1,6 @@
 import { Form, Link, data, redirect, useNavigation } from "react-router";
 import { buildAuth } from "../lib/auth.server";
-import { authErrorMessage, responseErrorMessage } from "../lib/auth-actions.server";
+import { callAuth } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
 import { AuthShell } from "../components/auth-shell";
@@ -50,25 +50,17 @@ export async function action({ request, context }: Route.ActionArgs) {
   }
 
   const auth = buildAuth(env);
-  try {
-    const response = await auth.api.resetPassword({
-      body: { newPassword: password, token },
-      headers: request.headers,
-      asResponse: true,
-    });
-    if (!response.ok) {
-      const formError: FormErrors = {
-        form: await responseErrorMessage(
-          response,
-          "This reset link is invalid or has expired.",
-        ),
-      };
-      return data({ errors: formError }, { status: 400 });
-    }
-  } catch (error) {
-    const formError: FormErrors = {
-      form: authErrorMessage(error, "This reset link is invalid or has expired."),
-    };
+  const result = await callAuth(
+    () =>
+      auth.api.resetPassword({
+        body: { newPassword: password, token },
+        headers: request.headers,
+        asResponse: true,
+      }),
+    "This reset link is invalid or has expired.",
+  );
+  if ("error" in result) {
+    const formError: FormErrors = { form: result.error };
     return data({ errors: formError }, { status: 400 });
   }
 

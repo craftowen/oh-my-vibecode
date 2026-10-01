@@ -1,13 +1,14 @@
 import { Form, Link, data, redirect, useNavigation } from "react-router";
 import { buildAuth } from "../lib/auth.server";
-import {
-  authErrorMessage,
-  redirectWithSession,
-  responseErrorMessage,
-} from "../lib/auth-actions.server";
+import { callAuth, redirectWithSession } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
-import { MAX_NAME_LENGTH, MIN_PASSWORD_LENGTH, field } from "../lib/validation";
+import {
+  MAX_NAME_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  field,
+  type FormErrors,
+} from "../lib/validation";
 import { AuthShell } from "../components/auth-shell";
 import { Field } from "../components/field";
 import { Alert } from "../components/ui/alert";
@@ -44,7 +45,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const email = field(form, "email");
   const password = String(form.get("password") ?? "");
 
-  const errors: Record<string, string> = {};
+  const errors: FormErrors = {};
   if (!name) {
     errors.name = "Name is required.";
   } else if (name.length > MAX_NAME_LENGTH) {
@@ -65,33 +66,25 @@ export async function action({ request, context }: Route.ActionArgs) {
     max: 10,
   });
   if (limit.blocked) {
-    const formError: Record<string, string> = { form: limit.message };
+    const formError: FormErrors = { form: limit.message };
     return data({ errors: formError, values: { name, email } }, { status: 429 });
   }
 
   const auth = buildAuth(env);
-  try {
-    const response = await auth.api.signUpEmail({
-      body: { name, email, password },
-      headers: request.headers,
-      asResponse: true,
-    });
-    if (!response.ok) {
-      const formError: Record<string, string> = {
-        form: await responseErrorMessage(
-          response,
-          "Could not create the account.",
-        ),
-      };
-      return data({ errors: formError, values: { name, email } }, { status: 400 });
-    }
-    return redirectWithSession(response, "/dashboard");
-  } catch (error) {
-    const formError: Record<string, string> = {
-      form: authErrorMessage(error, "Could not create the account."),
-    };
+  const result = await callAuth(
+    () =>
+      auth.api.signUpEmail({
+        body: { name, email, password },
+        headers: request.headers,
+        asResponse: true,
+      }),
+    "Could not create the account.",
+  );
+  if ("error" in result) {
+    const formError: FormErrors = { form: result.error };
     return data({ errors: formError, values: { name, email } }, { status: 400 });
   }
+  return redirectWithSession(result.response, "/dashboard");
 }
 
 export default function Signup({ actionData }: Route.ComponentProps) {

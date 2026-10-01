@@ -1,14 +1,9 @@
 import { Form, Link, data, redirect, useNavigation } from "react-router";
 import { buildAuth } from "../lib/auth.server";
-import {
-  authErrorMessage,
-  redirectWithSession,
-  responseErrorMessage,
-} from "../lib/auth-actions.server";
+import { callAuth, redirectWithSession } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
-import { field } from "../lib/validation";
-import { authClient } from "../lib/auth.client";
+import { field, type FormErrors } from "../lib/validation";
 import { AuthShell } from "../components/auth-shell";
 import { Field } from "../components/field";
 import { Alert } from "../components/ui/alert";
@@ -44,7 +39,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const email = field(form, "email");
   const password = String(form.get("password") ?? "");
 
-  const errors: Record<string, string> = {};
+  const errors: FormErrors = {};
   if (!email) errors.email = "Email is required.";
   if (!password) errors.password = "Password is required.";
   if (Object.keys(errors).length > 0) {
@@ -57,30 +52,25 @@ export async function action({ request, context }: Route.ActionArgs) {
     max: 10,
   });
   if (limit.blocked) {
-    const formError: Record<string, string> = { form: limit.message };
+    const formError: FormErrors = { form: limit.message };
     return data({ errors: formError, values: { email } }, { status: 429 });
   }
 
   const auth = buildAuth(env);
-  try {
-    const response = await auth.api.signInEmail({
-      body: { email, password },
-      headers: request.headers,
-      asResponse: true,
-    });
-    if (!response.ok) {
-      const formError: Record<string, string> = {
-        form: await responseErrorMessage(response, "Invalid email or password."),
-      };
-      return data({ errors: formError, values: { email } }, { status: 400 });
-    }
-    return redirectWithSession(response, "/dashboard");
-  } catch (error) {
-    const formError: Record<string, string> = {
-      form: authErrorMessage(error, "Invalid email or password."),
-    };
+  const result = await callAuth(
+    () =>
+      auth.api.signInEmail({
+        body: { email, password },
+        headers: request.headers,
+        asResponse: true,
+      }),
+    "Invalid email or password.",
+  );
+  if ("error" in result) {
+    const formError: FormErrors = { form: result.error };
     return data({ errors: formError, values: { email } }, { status: 400 });
   }
+  return redirectWithSession(result.response, "/dashboard");
 }
 
 export default function Login({ loaderData, actionData }: Route.ComponentProps) {
@@ -157,12 +147,22 @@ export default function Login({ loaderData, actionData }: Route.ComponentProps) 
           <Button
             variant="outline"
             className="w-full"
-            onClick={() =>
-              authClient.signIn.social({
+            onClick={async () => {
+              // Imported on click on purpose: the auth client is ~29 kB and
+              // only social sign-in needs it, so /login stays small.
+              // A tab left open across a deploy can 404 the old chunk; a
+              // reload fetches the current one instead of a dead button.
+              const { authClient } = await import("../lib/auth.client").catch(
+                () => {
+                  window.location.reload();
+                  return new Promise<never>(() => {});
+                },
+              );
+              await authClient.signIn.social({
                 provider: "google",
                 callbackURL: "/dashboard",
-              })
-            }
+              });
+            }}
           >
             Continue with Google
           </Button>

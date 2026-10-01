@@ -58,3 +58,22 @@ export function authErrorMessage(error: unknown, fallback: string): string {
   console.error("[auth] unexpected failure:", error);
   return fallback;
 }
+
+/**
+ * Runs an `asResponse: true` Better Auth call and folds both ways it can fail
+ * into one safe message: a rejected credential comes back as a non-OK
+ * Response, while some failures (a duplicate email, a driver error) still
+ * throw. Checking only one of the two is the bug this exists to prevent.
+ */
+export async function callAuth(
+  run: () => Promise<Response>,
+  fallback: string,
+): Promise<{ response: Response } | { error: string }> {
+  try {
+    const response = await run();
+    if (response.ok) return { response };
+    return { error: await responseErrorMessage(response, fallback) };
+  } catch (error) {
+    return { error: authErrorMessage(error, fallback) };
+  }
+}
