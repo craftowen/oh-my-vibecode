@@ -32,19 +32,12 @@ if (!fs.existsSync(devVarsPath)) {
   console.log(".dev.vars already exists, skipping creation.");
 }
 
-// (b) Run drizzle-kit generate
-console.log("Generating migrations...");
-try {
-  execSync("npx drizzle-kit generate", { stdio: "inherit" });
-} catch (e) {
-  console.error("Failed to generate migrations");
-  process.exit(1);
-}
-
-// (c) Apply local migrations
+// (b) Apply the committed migrations. Generating them is `bun run db:generate`,
+// run by whoever edits the schema, so setup never invents a migration nobody
+// committed.
 console.log("Applying migrations locally...");
 try {
-  execSync("npx wrangler d1 migrations apply DB --local", { stdio: "inherit" });
+  execSync("bunx wrangler d1 migrations apply DB --local", { stdio: "inherit" });
 } catch (e) {
   console.error("Failed to apply migrations");
   process.exit(1);

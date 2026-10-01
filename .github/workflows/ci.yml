@@ -4,10 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Only PR runs cancel each other: cancelling a main run mid-deploy would leave
+# production half-updated.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -19,13 +25,62 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: package.json
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Provision local D1 + .dev.vars
-        run: bun run setup
+      # A schema edit without its generated SQL would otherwise pass: the tests
+      # glob drizzle/*.sql, and production D1 would never see the migration.
+      - name: Migrations are committed
+        run: |
+          bunx drizzle-kit generate
+          git diff --exit-code -- drizzle/
+          test -z "$(git status --porcelain drizzle/)"
+
+      # The tests only read .dev.vars; vitest applies migrations to its own D1.
+      - name: Test env
+        run: cp .dev.vars.example .dev.vars
 
       - name: Typecheck, build and test
         run: bun run check
+
+  deploy:
+    needs: check
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    name: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Serializes deploys across refs and runs; a running deploy is never cancelled.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Restore production Worker configuration
+        env:
+          WORKER_CONFIG: ${{ secrets.CLOUDFLARE_WRANGLER_CONFIG }}
+        run: |
+          test -n "$WORKER_CONFIG"
+          printf '%s\n' "$WORKER_CONFIG" > wrangler.jsonc
+
+      - name: Build production
+        run: bun run build
+
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --config build/server/wrangler.json --keep-vars
+
+      - name: Check production response
+        run: curl --fail --silent --show-error --retry 3 --retry-all-errors --user-agent 'Mozilla/5.0' --output /dev/null https://oh-my-vibecode.tnlvof.workers.dev/login
