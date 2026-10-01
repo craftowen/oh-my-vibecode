@@ -75,8 +75,8 @@ table and the tests that name it.
 
 ## 4. Modules and imports
 
-- Relative paths only (`../lib/validation`). The `~/*` alias exists in
-  `tsconfig.json` but nothing uses it; do not start.
+- Relative paths only (`../lib/validation`). There is no `~/*` alias, so an
+  aliased import fails the build.
 - Import order, one group per line block, no blank lines between groups:
   1. `react`
   2. `react-router`
@@ -176,17 +176,19 @@ The single most visible house rule: **comments explain why, not what.**
 ## 9. Tests
 
 - One spec per feature in `tests/`, run in the real Workers runtime
-  (`@cloudflare/vitest-pool-workers`). `beforeAll(() => setupDb(env))` applies
-  every committed migration; nothing to register.
+  (`@cloudflare/vitest-pool-workers`). `tests/setup-db.ts` runs as a vitest
+  `setupFiles` entry and applies every committed migration before each spec;
+  no per-spec `setupDb`, nothing to register.
 - Drive the route the browser hits (`SELF.fetch(formPost("/login", …))`), not
   the underlying API. Tests that only call `auth.api.*` miss broken forms.
 - `describe("<feature>")` + `it("<does X> when <Y>")` in plain sentences:
   `it("rejects a short password with a field error instead of a redirect")`.
 - Assert the contract, not the markup: status, `Location`, `Set-Cookie`,
   and a stable phrase from the body. Avoid asserting on class names.
-- Shared helpers (`formPost`, `cookieHeader`) live at the top of the spec that
-  needs them; promote to `tests/setup-db.ts`-style modules only when a second
-  spec needs the same helper.
+- Shared helpers live in `tests/helpers.ts` (`formPost`, `cookieHeader`,
+  `signUp`); import them instead of copying. A helper only one spec needs stays
+  at the top of that spec and moves to `tests/helpers.ts` when a second spec
+  needs it.
 - A regression test opens with a comment naming the bug it pins.
 - Fixtures use `@example.com` addresses. Nothing in tests may send real email
   or hit a real network.

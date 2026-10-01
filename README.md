@@ -25,28 +25,29 @@ bun dev           # http://localhost:5173
 | **Performance** | Streaming SSR (`Suspense` + `use`), `prefetch="intent"`, session resolved once by middleware |
 | **Hardening** | Per-IP rate limiting in D1, security headers, nonce-based CSP in production |
 | **Testing** | Vitest on `@cloudflare/vitest-pool-workers` — the real Workers runtime, not a mock |
-| **CI** | GitHub Actions running `typecheck && build && test` on every push and PR |
+| **CI** | GitHub Actions running `typecheck && build && test` on every push and PR, and deploying `main` once that passes |
 
 ## Commands
 
 ```bash
-bun run setup             # one-time local provisioning (.dev.vars + local D1 migrations)
+bun run setup             # one-time local provisioning (.dev.vars + apply committed migrations to local D1)
 bun dev                   # dev server at localhost:5173
 bun run check             # typecheck && build && test — the gate for "done"
 bun run db:generate       # after editing app/db/schema.ts
 bun run db:migrate:local  # apply migrations to local D1
-bun run deploy            # wrangler deploy (run db:migrate:remote first)
+bun run deploy            # manual wrangler deploy (see Deploying)
 ```
 
 ## Deploying
 
 ```bash
 bunx wrangler login
+bunx wrangler d1 create oh-my-vibecode-db   # paste the printed id into wrangler.jsonc's database_id
 bun run db:migrate:remote
 bun run deploy
 ```
 
-`wrangler.jsonc`'s `database_id` is a placeholder that setup/deploy replaces. Set `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` as production secrets:
+`wrangler.jsonc`'s `database_id` is a placeholder: local dev and tests work with it, and nothing replaces it for you on a manual deploy. In CI, the `deploy` job of `.github/workflows/ci.yml` runs on pushes to `main` after the checks pass and overwrites the whole `wrangler.jsonc` with the `CLOUDFLARE_WRANGLER_CONFIG` repository secret (alongside `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`). Set `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` as production secrets:
 
 ```bash
 bunx wrangler secret put BETTER_AUTH_SECRET
@@ -135,28 +136,29 @@ bun dev           # http://localhost:5173
 | **성능** | 스트리밍 SSR(`Suspense` + `use`), `prefetch="intent"`, 미들웨어가 세션을 1회만 조회 |
 | **하드닝** | D1 기반 IP별 레이트리밋, 보안 헤더, 운영 빌드 nonce CSP |
 | **테스트** | `@cloudflare/vitest-pool-workers` — 목이 아닌 실제 Workers 런타임 |
-| **CI** | 푸시·PR마다 `typecheck && build && test` 실행 |
+| **CI** | 푸시·PR마다 `typecheck && build && test` 실행, 통과하면 `main`을 배포 |
 
 ## 명령어
 
 ```bash
-bun run setup             # 최초 1회 로컬 프로비저닝(.dev.vars + 로컬 D1 마이그레이션)
+bun run setup             # 최초 1회 로컬 프로비저닝(.dev.vars + 커밋된 마이그레이션을 로컬 D1에 적용)
 bun dev                   # 개발 서버
 bun run check             # typecheck && build && test — "완료" 판정 기준
 bun run db:generate       # app/db/schema.ts 수정 후
 bun run db:migrate:local  # 로컬 D1에 마이그레이션 적용
-bun run deploy            # wrangler deploy (먼저 db:migrate:remote)
+bun run deploy            # 수동 wrangler deploy (배포 절 참고)
 ```
 
 ## 배포
 
 ```bash
 bunx wrangler login
+bunx wrangler d1 create oh-my-vibecode-db   # 출력된 id를 wrangler.jsonc의 database_id에 기입
 bun run db:migrate:remote
 bun run deploy
 ```
 
-`wrangler.jsonc`의 `database_id`는 setup/deploy가 치환하는 플레이스홀더입니다. 운영 시크릿은 `bunx wrangler secret put BETTER_AUTH_SECRET` / `BETTER_AUTH_URL`로 설정합니다.
+`wrangler.jsonc`의 `database_id`는 플레이스홀더입니다. 로컬 개발과 테스트는 그대로 동작하지만, 수동 배포 때는 아무것도 치환해 주지 않습니다. CI에서는 `.github/workflows/ci.yml`의 `deploy` job이 `main` 푸시 때 검사 통과 후 실행되며, `wrangler.jsonc` 전체를 저장소 시크릿 `CLOUDFLARE_WRANGLER_CONFIG`로 덮어씁니다(`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`도 필요). 운영 시크릿은 `bunx wrangler secret put BETTER_AUTH_SECRET` / `BETTER_AUTH_URL`로 설정합니다.
 
 ## 이메일·OAuth·그 외
 

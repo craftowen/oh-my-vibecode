@@ -108,7 +108,9 @@ Add it to the `NAV` array in `app/routes/layout.tsx` to get a sidebar link.
 
 ```ts
 // tests/notes.spec.ts
-const cookie = await signUp("notes@example.com");     // see tests/account.spec.ts
+import { formPost, signUp } from "./helpers";
+
+const cookie = await signUp("notes@example.com");
 
 const created = await SELF.fetch(formPost("/notes", { body: "hello" }, cookie));
 expect(created.status).toBe(200);

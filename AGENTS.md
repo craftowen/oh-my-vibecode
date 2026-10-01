@@ -16,7 +16,7 @@ bun run typecheck         # react-router typegen && tsc
 bun run test              # vitest run (runs in real Workers runtime; requires prior build)
 bun run db:generate       # drizzle-kit generate (after editing app/db/schema.ts)
 bun run db:migrate:local  # apply migrations to local D1
-bun run deploy            # wrangler deploy (requires wrangler login; prod migrations via db:migrate:remote first)
+bun run deploy            # manual wrangler deploy (wrangler login + real database_id; prod migrations via db:migrate:remote first). CI deploys main automatically
 ```
 
 ## Structure
@@ -36,7 +36,7 @@ app/components/local-time.tsx # hydration-safe timestamp rendering
 app/app.css               # Tailwind v4 entry + design tokens (shadcn variable names) + dark mode
 app/lib/app-context.ts    # cloudflareContext (env/ctx) + nonceContext (CSP)
 app/lib/auth.server.ts    # buildAuth(env) — lazy per-env Better Auth instance
-app/lib/auth-actions.server.ts # redirectWithSession / error-message helpers for auth actions
+app/lib/auth-actions.server.ts # callAuth / redirectWithSession / error-message helpers for auth actions
 app/lib/email.server.ts   # sendEmail(env, message) — Resend over fetch, console fallback
 app/lib/rate-limit.server.ts # D1-backed limiter for the kit's own auth actions
 app/lib/validation.ts     # MIN_PASSWORD_LENGTH, field(form, name), FormErrors
@@ -45,9 +45,10 @@ app/lib/theme.ts          # theme cookie read/write (dark mode)
 app/lib/cn.ts             # class joiner (no clsx/tailwind-merge — see UI rules)
 docs/recipes/             # guides for things left out of the core (email, OAuth, R2, AI, cron)
 docs/CONVENTIONS.md       # code style: formatting, naming, import order, comments, tests, git
-app/db/schema.ts          # app tables (Drizzle). auth-schema.ts is Better Auth's — never edit by hand
+app/db/schema.ts          # app tables (Drizzle). auth-schema.ts is Better Auth's — see Constraints before touching it
 drizzle/                  # generated SQL migrations (committed)
-tests/                    # vitest-pool-workers specs
+public/_headers           # immutable Cache-Control for hashed /assets/*
+tests/                    # vitest-pool-workers specs; setup-db.ts (migrations, via setupFiles), helpers.ts (formPost, cookieHeader, signUp)
 ```
 
 ## Core patterns (follow these exactly)
@@ -55,10 +56,10 @@ tests/                    # vitest-pool-workers specs
 1. **Cloudflare bindings**: only available per-request. In loaders/actions: `const { env } = context.get(cloudflareContext)!;`. Never touch bindings at module scope.
 2. **Auth**: `buildAuth(env)` (lazy, cached per env). Better Auth owns `/api/auth/*` — never add competing auth endpoints there.
    - Sign-in/sign-up/sign-out run **server-side in route actions** (`app/routes/login.tsx`, `signup.tsx`, `logout.tsx`) via `auth.api.signInEmail` / `signUpEmail` / `signOut` with `asResponse: true`, then `redirectWithSession(response, "/dashboard")` to carry the Set-Cookie headers onto the redirect. This is what makes auth work without JavaScript.
-   - With `asResponse: true` a rejected credential comes back as a **non-OK Response, not a thrown error** — always check `response.ok` before redirecting. Keep the try/catch too: some failures (e.g. duplicate email) still throw.
+   - With `asResponse: true` a rejected credential comes back as a **non-OK Response, not a thrown error**, while some failures (e.g. duplicate email) still throw. Wrap every call in `callAuth(() => auth.api.X({ …, asResponse: true }), "Fallback sentence.")` (`app/lib/auth-actions.server.ts`): it returns `{ response }` on success or `{ error }` — a safe form message — for both failure paths. Return `error` as `FormErrors.form`; never hand-roll the `response.ok` + try/catch pair.
    - The auth client (`app/lib/auth.client.ts`) is only for redirect-based social sign-in.
 3. **Protected routes**: place them under the protected `layout` route. `authMiddleware` (RR8 middleware, runs once before all loaders in the subtree) redirects anonymous users to /login and stores the session; read it with `context.get(sessionContext)!` — never call `getSession` again in loaders under the protected layout.
-4. **DB changes**: edit `app/db/schema.ts` → `bun run db:generate` → `bun run db:migrate:local` → commit generated files in `drizzle/`. Never write raw SQL migrations by hand. Tests discover migrations automatically (`tests/setup-db.ts` globs `drizzle/*.sql`) — nothing to register.
+4. **DB changes**: edit `app/db/schema.ts` → `bun run db:generate` → `bun run db:migrate:local` → commit generated files in `drizzle/`. Never write raw SQL migrations by hand. Tests apply migrations automatically (`tests/setup-db.ts` globs `drizzle/*.sql` and runs as a vitest `setupFiles` entry) — nothing to register, no per-spec `setupDb`. CI fails if `drizzle-kit generate` would produce anything uncommitted.
 5. **Rate-limit anything that costs money or guesses secrets.** `limitAuthAttempt(env, request, "route-name", { window, max })` from `app/lib/rate-limit.server.ts`, returning `data({ errors }, { status: 429 })` when blocked. Better Auth's own limiter only covers `/api/auth/*`, never your actions.
 6. **Email** goes through `sendEmail(env, message)`. It must never throw into a request path; it logs to the console when `RESEND_API_KEY` is unset.
 7. **New env var** → add it to `.dev.vars`, `.dev.vars.example` and `scripts/setup.ts`, then run `bun run cf-typegen` so `Env` picks it up.
@@ -72,7 +73,7 @@ tests/                    # vitest-pool-workers specs
 3. `app/routes/notes.tsx`: loader (read via `drizzle(env.DB)`), action (create/delete), component. Session from `context.get(sessionContext)!`.
 4. Register in `app/routes.ts` under the protected `layout` route.
 5. UI: compose from `app/components/ui/*` and `<Field>` — do not hand-roll inputs or buttons.
-6. `tests/notes.spec.ts`: follow `tests/ui-flow.spec.ts` — drive the **route** the browser hits (form POST to your action), not just the underlying API. Tests that only call the API miss broken forms.
+6. `tests/notes.spec.ts`: follow `tests/ui-flow.spec.ts` — drive the **route** the browser hits (form POST to your action), not just the underlying API. Tests that only call the API miss broken forms. Use `formPost`, `cookieHeader` and `signUp` from `tests/helpers.ts`; the schema is already migrated.
 7. `bun run check` — done only when green.
 
 ## Performance rules (non-negotiable defaults)
@@ -102,7 +103,7 @@ Pages must render fast. Every new page follows these:
 
 1. **Formatting**: 2-space indent, double quotes, semicolons, trailing commas, wrap around 80 (100 max). No formatter is configured — match the neighbouring code.
 2. **Naming**: kebab-case files; `.server.ts` / `.client.ts` suffixes for one-sided modules; `api.<name>.tsx` for resource routes; PascalCase components/types, camelCase functions, UPPER_SNAKE constants; booleans read as predicates (`submitting`, `hasGoogle`).
-3. **Imports**: relative paths only (the `~/*` alias is unused); order react → react-router → third-party → `../lib` → `../db` → `../components` → `./+types` last; `import type` for types; named exports everywhere except a route's default component; no barrel files.
+3. **Imports**: relative paths only (there is no `~/*` alias); order react → react-router → third-party → `../lib` → `../db` → `../components` → `./+types` last; `import type` for types; named exports everywhere except a route's default component; no barrel files.
 4. **Route module order**: `meta` → `middleware` → `loader` → action helpers → `action` → local components → `export default` page. Loaders `throw redirect()`, actions `return redirect()`.
 5. **Types**: `interface` for props and contracts, `type` for unions/derived; `as const` lookup tables with `keyof typeof`; no `any`, no `@ts-ignore`; `!` only on `context.get(…)`.
 6. **Comments explain why, not what.** Every exported symbol gets a JSDoc naming the reason or the trap; deliberate-looking-wrong code gets an inline `// … on purpose` note. No commented-out code.
@@ -112,11 +113,11 @@ Pages must render fast. Every new page follows these:
 
 ## Constraints
 
-- No new runtime dependencies without explicit user approval (current allowlist: react-router, better-auth, drizzle-orm, tailwind v4, lucide-react). This is why `cn()` is hand-written instead of clsx/tailwind-merge/cva.
+- No new runtime dependencies without explicit user approval (current allowlist: react, react-dom, react-router, isbot, better-auth, drizzle-orm, lucide-react; tailwind v4 is a dev dependency). This is why `cn()` is hand-written instead of clsx/tailwind-merge/cva.
 - `lucide-react` brand icons (e.g. `Github`) are deprecated — use an inline SVG like `app/components/github-mark.tsx`.
-- Never edit `app/db/auth-schema.ts`, `worker-configuration.d.ts` (generated via `cf-typegen`), or files in `drizzle/meta/`.
-- Never commit `.dev.vars` / secrets. `wrangler.jsonc` database_id is a placeholder replaced by setup/deploy.
+- Never edit `worker-configuration.d.ts` (generated via `cf-typegen`) or files in `drizzle/meta/`. `app/db/auth-schema.ts` is Better Auth's schema: the only hand edits allowed are index declarations mirroring Better Auth's own (the `session.userId`, `account.userId`, `verification.identifier` indexes). Do not blindly regenerate it with `bunx auth@1.7.1 generate` — the 1.7 CLI switches columns to snake_case, timestamps from seconds to ms and makes `account.issuer` NOT NULL, which breaks existing data. Diff its output first and plan a data migration.
+- Never commit `.dev.vars` / secrets. `wrangler.jsonc`'s database_id is a placeholder: local dev and tests work with it as is. CI's `deploy` job (push to main, after `check` passes) overwrites the whole `wrangler.jsonc` with the `CLOUDFLARE_WRANGLER_CONFIG` secret; a manual `bun run deploy` needs `bunx wrangler d1 create` and the real id pasted in first.
 - No git commit/push unless the user explicitly asks.
-- `vite.config.ts` uses `cloudflare({ viteEnvironment: { name: "ssr" } })` — do not change this (avoids the double-SSR-build trap).
+- `vite.config.ts` uses `cloudflare({ viteEnvironment: { name: "ssr" } })` — do not change this (avoids the double-SSR-build trap). It also minifies the SSR environment's build: wrangler runs with `no_bundle` and would ship the Worker unminified otherwise.
 - `server.ts` sets security headers on every response and a nonce-based CSP on production HTML. Any inline `<script>` you add needs the nonce from the root loader, or it will be blocked in production. Prefer not adding one.
 - Never render a raw error message from a dependency. `authErrorMessage` / `responseErrorMessage` only surface 4xx text; 5xx bodies (which include failing SQL and its parameters) go to the log and the user sees a generic sentence.
