@@ -3,6 +3,7 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "packageManager": "bun@1.4.2",
   "scripts": {
     "dev": "react-router dev",
     "build": "react-router build",
@@ -28,7 +29,6 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.53.0",
     "@cloudflare/vitest-pool-workers": "^0.22.0",
-    "@cloudflare/workers-types": "^5.20260819.1",
     "@react-router/dev": "^8.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.2.0",
