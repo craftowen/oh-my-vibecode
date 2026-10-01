@@ -1,4 +1,12 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+/*
+ * The three index() declarations below were added by hand to match the indexes
+ * better-auth 1.7 declares (session.userId, account.userId,
+ * verification.identifier); without them every login and session list scans
+ * the whole table. Do not blindly regenerate this file: the 1.7 CLI (npm
+ * `auth`) also switches columns to snake_case and timestamps to milliseconds,
+ * which would misread every existing row.
+ */
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 
 export const user = sqliteTable("user", {
   id: text("id").primaryKey(),
@@ -19,7 +27,7 @@ export const session = sqliteTable("session", {
   ipAddress: text("ipAddress"),
   userAgent: text("userAgent"),
   userId: text("userId").notNull().references(() => user.id)
-});
+}, (table) => [index("session_userId_idx").on(table.userId)]);
 
 export const account = sqliteTable("account", {
   id: text("id").primaryKey(),
@@ -36,7 +44,7 @@ export const account = sqliteTable("account", {
   issuer: text("issuer"),
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
   updatedAt: integer("updatedAt", { mode: "timestamp" }).notNull()
-});
+}, (table) => [index("account_userId_idx").on(table.userId)]);
 
 export const verification = sqliteTable("verification", {
   id: text("id").primaryKey(),
@@ -45,4 +53,4 @@ export const verification = sqliteTable("verification", {
   expiresAt: integer("expiresAt", { mode: "timestamp" }).notNull(),
   createdAt: integer("createdAt", { mode: "timestamp" }),
   updatedAt: integer("updatedAt", { mode: "timestamp" })
-});
+}, (table) => [index("verification_identifier_idx").on(table.identifier)]);

@@ -15,6 +15,13 @@
       "when": 1787207509258,
       "tag": "0001_stormy_preak",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1790817017272,
+      "tag": "0002_absent_shinobi_shaw",
+      "breakpoints": true
     }
   ]
 }
