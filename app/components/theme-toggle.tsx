@@ -21,7 +21,10 @@ export function ThemeToggle({ theme }: { theme: Theme | null }) {
 
   // fetcher.formData gives us the pending value for free — no local state.
   const pending = fetcher.formData?.get("theme") as Theme | undefined;
-  const current = pending ?? theme ?? systemTheme;
+  // The toggle opts out of revalidation, so the `theme` prop stays at its old
+  // value; the action's echo is what keeps the new choice from reverting.
+  const saved = (fetcher.data as { theme?: Theme } | undefined)?.theme;
+  const current = pending ?? saved ?? theme ?? systemTheme;
   const next: Theme = current === "dark" ? "light" : "dark";
 
   useEffect(() => {
@@ -34,6 +37,9 @@ export function ThemeToggle({ theme }: { theme: Theme | null }) {
     <fetcher.Form
       method="post"
       action="/api/theme"
+      // Nothing a loader returns depends on the theme cookie except the class
+      // we already swapped, so re-running every loader would be wasted D1 work.
+      defaultShouldRevalidate={false}
       onSubmit={() => {
         document.documentElement.classList.toggle("dark", next === "dark");
       }}
