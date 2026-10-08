@@ -3,9 +3,9 @@ import { Link, useLoaderData } from "react-router";
 import { drizzle } from "drizzle-orm/d1";
 import { count, gt } from "drizzle-orm";
 import { ArrowRight, KeyRound, Users } from "lucide-react";
+import { session as sessionTable, user } from "@repo/db";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
-import { session as sessionTable, user } from "../db/auth-schema";
 import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
 import {

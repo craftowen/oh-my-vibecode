@@ -6,7 +6,7 @@ import { applyD1Migrations, env } from "cloudflare:test";
  * order. Adding a migration needs no change here — `bun run db:generate` and
  * the tests stay in sync on their own.
  */
-const modules = import.meta.glob("../drizzle/*.sql", {
+const modules = import.meta.glob("../../../packages/db/drizzle/*.sql", {
   eager: true,
   query: "?raw",
   import: "default",

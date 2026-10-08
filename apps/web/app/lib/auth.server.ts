@@ -1,7 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from "drizzle-orm/d1";
-import * as schema from "../db/schema";
+import * as schema from "@repo/db";
 import { actionEmail, sendEmail } from "./email.server";
 
 /** Better Auth must be created lazily per-env: on Workers, bindings (env.DB)

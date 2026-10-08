@@ -3,7 +3,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { execSync } from "node:child_process";
 
-const rootDir = process.cwd();
+// The web app's folder, not the cwd: root `bun run setup` and a direct
+// `bun scripts/setup.ts` must both land .dev.vars next to wrangler.jsonc.
+const rootDir = path.join(import.meta.dirname, "..");
 const devVarsPath = path.join(rootDir, ".dev.vars");
 
 // (a) Create .dev.vars
@@ -37,7 +39,10 @@ if (!fs.existsSync(devVarsPath)) {
 // committed.
 console.log("Applying migrations locally...");
 try {
-  execSync("bunx wrangler d1 migrations apply DB --local", { stdio: "inherit" });
+  execSync("bunx wrangler d1 migrations apply DB --local", {
+    cwd: rootDir,
+    stdio: "inherit",
+  });
 } catch (e) {
   console.error("Failed to apply migrations");
   process.exit(1);

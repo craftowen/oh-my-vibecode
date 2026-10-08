@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/d1";
 import { sql } from "drizzle-orm";
-import { rateLimit } from "../db/schema";
+import { rateLimit } from "@repo/db";
 
 /**
  * Fixed-window rate limiting backed by D1.

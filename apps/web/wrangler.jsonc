@@ -9,7 +9,7 @@
       "binding": "DB",
       "database_name": "oh-my-vibecode-db",
       "database_id": "placeholder-run-setup",
-      "migrations_dir": "drizzle"
+      "migrations_dir": "../../packages/db/drizzle"
     }
   ],
   "send_email": [
