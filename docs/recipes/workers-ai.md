@@ -6,7 +6,7 @@ to manage.
 ## 1. Add the binding
 
 ```jsonc
-// wrangler.jsonc
+// apps/web/wrangler.jsonc
 {
   "ai": { "binding": "AI" }
 }
@@ -21,7 +21,7 @@ bun run cf-typegen   # regenerate Env so env.AI is typed
 Bindings are per-request, exactly like D1:
 
 ```tsx
-// app/routes/summarize.tsx
+// apps/web/app/routes/summarize.tsx
 import { cloudflareContext } from "../lib/app-context";
 import type { Route } from "./+types/summarize";
 
@@ -56,12 +56,12 @@ return new Response(stream, {
 ```
 
 …or, in a loader, return the promise un-awaited and render it with `<Suspense>`
-+ `use()` — the kit's default pattern, see `app/routes/dashboard.tsx`.
++ `use()` — the kit's default pattern, see `apps/web/app/routes/dashboard.tsx`.
 
 ## Cost and limits
 
 `env.AI.run` counts against Workers AI's neuron allowance. Put user-triggered
-inference behind the rate limiter in `app/lib/rate-limit.server.ts` before
+inference behind the rate limiter in `apps/web/app/lib/rate-limit.server.ts` before
 shipping it:
 
 ```ts

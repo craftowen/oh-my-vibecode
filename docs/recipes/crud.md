@@ -6,7 +6,7 @@ sees their own rows of.
 ## 1. Schema
 
 ```ts
-// app/db/schema.ts
+// packages/db/src/schema.ts
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { user } from "./auth-schema";
 
@@ -24,18 +24,19 @@ export const note = sqliteTable("note", {
 bun run db:generate && bun run db:migrate:local
 ```
 
-Commit the generated file in `drizzle/` — tests pick it up automatically.
+Commit the generated file in `packages/db/drizzle/` — tests pick it up
+automatically, and every app on the D1 sees the table through `@repo/db`.
 
 ## 2. Route
 
 ```tsx
-// app/routes/notes.tsx
+// apps/web/app/routes/notes.tsx
 import { Form, data, useNavigation } from "react-router";
 import { drizzle } from "drizzle-orm/d1";
 import { desc, eq, and } from "drizzle-orm";
+import { note } from "@repo/db";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
-import { note } from "../db/schema";
 import { field, type FormErrors } from "../lib/validation";
 import { EmptyState } from "../components/empty-state";
 import { Button } from "../components/ui/button";
@@ -89,12 +90,12 @@ export async function action({ request, context }: Route.ActionArgs) {
 ```
 
 Render the list inside `<Suspense>` with `use(notes)`, exactly like
-`app/routes/dashboard.tsx` does for its stats.
+`apps/web/app/routes/dashboard.tsx` does for its stats.
 
 ## 3. Register it
 
 ```ts
-// app/routes.ts — inside the protected layout
+// apps/web/app/routes.ts — inside the protected layout
 layout("routes/layout.tsx", [
   route("dashboard", "routes/dashboard.tsx"),
   route("notes", "routes/notes.tsx"),
@@ -102,12 +103,12 @@ layout("routes/layout.tsx", [
 ]),
 ```
 
-Add it to the `NAV` array in `app/routes/layout.tsx` to get a sidebar link.
+Add it to the `NAV` array in `apps/web/app/routes/layout.tsx` to get a sidebar link.
 
 ## 4. Test the route, not the query
 
 ```ts
-// tests/notes.spec.ts
+// apps/web/tests/notes.spec.ts
 import { formPost, signUp } from "./helpers";
 
 const cookie = await signUp("notes@example.com");

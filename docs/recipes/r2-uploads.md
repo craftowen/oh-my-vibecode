@@ -10,7 +10,7 @@ bunx wrangler r2 bucket create my-app-uploads
 ```
 
 ```jsonc
-// wrangler.jsonc
+// apps/web/wrangler.jsonc
 {
   "r2_buckets": [
     { "binding": "UPLOADS", "bucket_name": "my-app-uploads" }
@@ -27,7 +27,7 @@ bun run cf-typegen
 React Router parses `multipart/form-data` for you; the file arrives as a `File`.
 
 ```tsx
-// app/routes/upload.tsx
+// apps/web/app/routes/upload.tsx
 import { data } from "react-router";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
@@ -84,7 +84,7 @@ Do not make the bucket public if the objects are per-user. Stream them through a
 route that checks the session first:
 
 ```tsx
-// app/routes/uploads.$key.tsx  → route("uploads/*", "routes/uploads.$key.tsx")
+// apps/web/app/routes/uploads.$key.tsx  → route("uploads/*", "routes/uploads.$key.tsx")
 export async function loader({ params, context }: Route.LoaderArgs) {
   const session = context.get(sessionContext)!;
   const { env } = context.get(cloudflareContext)!;
@@ -109,5 +109,5 @@ binding so the bytes never pass through your Worker.
 
 ## Local development
 
-`wrangler dev` emulates R2 on disk under `.wrangler/state` — no bucket needed to
+`wrangler dev` emulates R2 on disk under `apps/web/.wrangler/state` — no bucket needed to
 develop, and it is gitignored.

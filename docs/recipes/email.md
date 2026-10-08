@@ -1,7 +1,7 @@
 # Sending email
 
 The kit ships a single entry point — `sendEmail(env, message)` in
-`app/lib/email.server.ts`. Better Auth's verification and password-reset hooks
+`apps/web/app/lib/email.server.ts`. Better Auth's verification and password-reset hooks
 already call it, so wiring a provider is the only thing left to do.
 
 ## Local development
@@ -14,10 +14,10 @@ output and paste it into the browser.
 ## Using Cloudflare Workers Send Email
 
 The kit is preconfigured to use Cloudflare Workers Send Email via the `send_email`
-binding in `wrangler.jsonc`:
+binding in `apps/web/wrangler.jsonc`:
 
 ```jsonc
-// wrangler.jsonc
+// apps/web/wrangler.jsonc
 "send_email": [
   {
     "name": "EMAIL"
@@ -29,12 +29,12 @@ binding in `wrangler.jsonc`:
 2. Set `EMAIL_FROM` to an address on your verified Cloudflare domain:
 
 ```bash
-# .dev.vars (local) — for production use wrangler secret put
+# apps/web/.dev.vars (local) — for production use wrangler secret put
 EMAIL_FROM=noreply@your-verified-domain.com
 ```
 
 ```bash
-bunx wrangler secret put EMAIL_FROM
+bunx wrangler secret put EMAIL_FROM --config apps/web/wrangler.jsonc
 ```
 
 After changing bindings or variables, regenerate the `Env` type:
@@ -49,7 +49,7 @@ Replace the body of `sendEmail()`. Every caller goes through it, so nothing else
 changes:
 
 ```ts
-// app/lib/email.server.ts
+// apps/web/app/lib/email.server.ts
 export async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
   try {
     const response = await fetch("https://api.postmarkapp.com/email", {
@@ -91,7 +91,7 @@ Off by default so `bun run setup && bun dev` gives you a usable account with no
 third-party signup. Once email works:
 
 ```ts
-// app/lib/auth.server.ts
+// apps/web/app/lib/auth.server.ts
 emailAndPassword: {
   enabled: true,
   requireEmailVerification: true,  // <- was false

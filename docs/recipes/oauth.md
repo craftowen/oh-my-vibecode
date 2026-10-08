@@ -13,14 +13,14 @@ so an unconfigured clone shows no dead button.
 3. Set the variables:
 
 ```bash
-# .dev.vars
+# apps/web/.dev.vars
 GOOGLE_CLIENT_ID=...apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=...
 ```
 
 ```bash
-bunx wrangler secret put GOOGLE_CLIENT_ID
-bunx wrangler secret put GOOGLE_CLIENT_SECRET
+bunx wrangler secret put GOOGLE_CLIENT_ID --config apps/web/wrangler.jsonc
+bunx wrangler secret put GOOGLE_CLIENT_SECRET --config apps/web/wrangler.jsonc
 ```
 
 `BETTER_AUTH_URL` must match the origin the callback is registered under, or the
@@ -28,7 +28,7 @@ provider will reject the exchange.
 
 ## Adding another provider
 
-`app/lib/auth.server.ts` builds `socialProviders` conditionally. Extend it the
+`apps/web/app/lib/auth.server.ts` builds `socialProviders` conditionally. Extend it the
 same way:
 
 ```ts
