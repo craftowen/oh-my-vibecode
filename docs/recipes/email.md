@@ -6,27 +6,38 @@ already call it, so wiring a provider is the only thing left to do.
 
 ## Local development
 
-With `RESEND_API_KEY` empty, nothing is sent: the message (including the
-verification or reset link) is printed to the Worker console. That is enough to
-walk the whole flow locally — copy the link out of `bun dev`'s output and paste
-it into the browser.
+When the `EMAIL` binding is not present or in local testing, the message
+(including the verification or reset link) is printed to the Worker console.
+That is enough to walk the whole flow locally — copy the link out of `bun dev`'s
+output and paste it into the browser.
 
-## Using Resend
+## Using Cloudflare Workers Send Email
+
+The kit is preconfigured to use Cloudflare Workers Send Email via the `send_email`
+binding in `wrangler.jsonc`:
+
+```jsonc
+// wrangler.jsonc
+"send_email": [
+  {
+    "name": "EMAIL"
+  }
+]
+```
+
+1. Enable Email Routing in your Cloudflare dashboard for your domain.
+2. Set `EMAIL_FROM` to an address on your verified Cloudflare domain:
 
 ```bash
 # .dev.vars (local) — for production use wrangler secret put
-RESEND_API_KEY=re_xxxxxxxx
-EMAIL_FROM=you@your-verified-domain.com
+EMAIL_FROM=noreply@your-verified-domain.com
 ```
 
 ```bash
-bunx wrangler secret put RESEND_API_KEY
 bunx wrangler secret put EMAIL_FROM
 ```
 
-`EMAIL_FROM` must be an address on a domain you verified with the provider.
-
-After adding any new variable, regenerate the `Env` type:
+After changing bindings or variables, regenerate the `Env` type:
 
 ```bash
 bun run cf-typegen

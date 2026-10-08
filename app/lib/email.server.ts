@@ -1,12 +1,12 @@
 /**
- * Transactional email, with no extra dependency.
+ * Transactional email via Cloudflare Workers Send Email binding.
  *
- * - `RESEND_API_KEY` set  → delivers through Resend's REST API over `fetch`.
- * - not set               → logs the message (and any link in it) to the Worker
- *                           console, so the whole verification / reset flow is
- *                           testable locally without signing up for anything.
+ * - `env.EMAIL` binding present  → delivers through Cloudflare Send Email (`env.EMAIL.send`).
+ * - binding not present / local → logs the message (and any link in it) to the Worker
+ *                                 console, so the whole verification / reset flow is
+ *                                 testable locally without sending actual emails.
  *
- * To switch providers, replace the fetch call below — every caller goes through
+ * To switch providers, replace the send call below — every caller goes through
  * `sendEmail()`, and the auth wiring in `auth.server.ts` never changes.
  */
 export interface EmailMessage {
@@ -16,42 +16,26 @@ export interface EmailMessage {
   html?: string;
 }
 
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
-
 export async function sendEmail(env: Env, message: EmailMessage): Promise<void> {
-  const apiKey = env.RESEND_API_KEY;
-  const from = env.EMAIL_FROM || "onboarding@resend.dev";
+  const from = env.EMAIL_FROM || "noreply@example.com";
 
-  if (!apiKey) {
+  if (!env.EMAIL) {
     console.info(
-      `[email] (no RESEND_API_KEY — not sent)\n  to: ${message.to}\n  subject: ${message.subject}\n  ${message.text}`,
+      `[email] (no EMAIL binding — not sent)\n  to: ${message.to}\n  subject: ${message.subject}\n  ${message.text}`,
     );
     return;
   }
 
   try {
-    const response = await fetch(RESEND_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from,
-        to: message.to,
-        subject: message.subject,
-        text: message.text,
-        ...(message.html ? { html: message.html } : {}),
-      }),
-      signal: AbortSignal.timeout(10_000),
+    await env.EMAIL.send({
+      from,
+      to: message.to,
+      subject: message.subject,
+      text: message.text,
+      ...(message.html ? { html: message.html } : {}),
     });
-
-    if (!response.ok) {
-      // A failed email must not turn a successful signup into an error page.
-      console.error(`[email] delivery failed (${response.status})`);
-    }
-    await response.body?.cancel();
   } catch (error) {
+    // A failed email must not turn a successful signup into an error page.
     console.error("[email] delivery failed:", error);
   }
 }

@@ -12,6 +12,11 @@
       "migrations_dir": "drizzle"
     }
   ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
   "observability": {
     "enabled": true
   }

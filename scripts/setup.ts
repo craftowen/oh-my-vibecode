@@ -21,9 +21,9 @@ if (!fs.existsSync(devVarsPath)) {
       "GOOGLE_CLIENT_SECRET=",
       "",
       "# Optional — transactional email (verification, password reset).",
-      "# Leave RESEND_API_KEY empty and emails are printed to the Worker console.",
-      "RESEND_API_KEY=",
-      "EMAIL_FROM=onboarding@resend.dev",
+      "# Uses Cloudflare Workers Send Email (send_email binding in wrangler.jsonc).",
+      "# Set EMAIL_FROM to an address on your verified Cloudflare Email Routing domain.",
+      "EMAIL_FROM=noreply@your-domain.com",
       "",
     ].join("\n"),
   );

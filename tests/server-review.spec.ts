@@ -42,24 +42,41 @@ describe("concurrent rate limits", () => {
 });
 
 describe("email delivery failures", () => {
-  it("does not reject the auth flow when the network fails", async () => {
-    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Network failed"));
-    vi.stubGlobal("fetch", fetchMock);
+  it("does not reject the auth flow when delivery throws", async () => {
+    const mockEmail = {
+      send: vi.fn().mockRejectedValue(new Error("Delivery failed")),
+    } as unknown as SendEmail;
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(sendEmail({ ...env, RESEND_API_KEY: "test-only" }, {
+    await expect(sendEmail({ ...env, EMAIL: mockEmail }, {
       to: "delivery@example.com", subject: "Test", text: "Test",
     })).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalled();
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(log).toHaveBeenCalledWith("[email] delivery failed:", expect.any(Error));
+    expect(mockEmail.send).toHaveBeenCalledOnce();
   });
 
-  it("handles a provider failure without exposing its response body", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("provider details", { status: 500 })));
-    const log = vi.spyOn(console, "error").mockImplementation(() => {});
-    await expect(sendEmail({ ...env, RESEND_API_KEY: "test-only" }, {
-      to: "delivery@example.com", subject: "Test", text: "Test",
+  it("logs to console when EMAIL binding is not configured", async () => {
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    const envWithoutEmail = { ...env, EMAIL: undefined as unknown as SendEmail };
+    await expect(sendEmail(envWithoutEmail, {
+      to: "delivery@example.com", subject: "Test", text: "Test message",
     })).resolves.toBeUndefined();
-    expect(log).toHaveBeenCalledWith("[email] delivery failed (500)");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("[email] (no EMAIL binding — not sent)"));
+  });
+
+  it("delivers email with expected payload when binding is present", async () => {
+    const mockEmail = {
+      send: vi.fn().mockResolvedValue({ messageId: "msg-123" }),
+    } as unknown as SendEmail;
+    await expect(sendEmail({ ...env, EMAIL: mockEmail, EMAIL_FROM: "custom@example.com" }, {
+      to: "recipient@example.com", subject: "Hello", text: "World", html: "<p>World</p>",
+    })).resolves.toBeUndefined();
+    expect(mockEmail.send).toHaveBeenCalledWith({
+      from: "custom@example.com",
+      to: "recipient@example.com",
+      subject: "Hello",
+      text: "World",
+      html: "<p>World</p>",
+    });
   });
 
   it("keeps email copy and URL quotes from changing the HTML structure", () => {

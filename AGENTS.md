@@ -37,7 +37,7 @@ app/app.css               # Tailwind v4 entry + design tokens (shadcn variable n
 app/lib/app-context.ts    # cloudflareContext (env/ctx) + nonceContext (CSP)
 app/lib/auth.server.ts    # buildAuth(env) — lazy per-env Better Auth instance
 app/lib/auth-actions.server.ts # callAuth / redirectWithSession / error-message helpers for auth actions
-app/lib/email.server.ts   # sendEmail(env, message) — Resend over fetch, console fallback
+app/lib/email.server.ts   # sendEmail(env, message) — Cloudflare Send Email binding, console fallback
 app/lib/rate-limit.server.ts # D1-backed limiter for the kit's own auth actions
 app/lib/validation.ts     # MIN_PASSWORD_LENGTH, field(form, name), FormErrors
 app/lib/middleware.ts     # authMiddleware (RR8 middleware) + sessionContext
@@ -61,7 +61,7 @@ tests/                    # vitest-pool-workers specs; setup-db.ts (migrations, 
 3. **Protected routes**: place them under the protected `layout` route. `authMiddleware` (RR8 middleware, runs once before all loaders in the subtree) redirects anonymous users to /login and stores the session; read it with `context.get(sessionContext)!` — never call `getSession` again in loaders under the protected layout.
 4. **DB changes**: edit `app/db/schema.ts` → `bun run db:generate` → `bun run db:migrate:local` → commit generated files in `drizzle/`. Never write raw SQL migrations by hand. Tests apply migrations automatically (`tests/setup-db.ts` globs `drizzle/*.sql` and runs as a vitest `setupFiles` entry) — nothing to register, no per-spec `setupDb`. CI fails if `drizzle-kit generate` would produce anything uncommitted.
 5. **Rate-limit anything that costs money or guesses secrets.** `limitAuthAttempt(env, request, "route-name", { window, max })` from `app/lib/rate-limit.server.ts`, returning `data({ errors }, { status: 429 })` when blocked. Better Auth's own limiter only covers `/api/auth/*`, never your actions.
-6. **Email** goes through `sendEmail(env, message)`. It must never throw into a request path; it logs to the console when `RESEND_API_KEY` is unset.
+6. **Email** goes through `sendEmail(env, message)`. It must never throw into a request path; it logs to the console when `EMAIL` binding is unset.
 7. **New env var** → add it to `.dev.vars`, `.dev.vars.example` and `scripts/setup.ts`, then run `bun run cf-typegen` so `Env` picks it up.
 8. **Any user-supplied redirect target goes through `safeRedirect()`** (`app/lib/validation.ts`). A `startsWith("/")` check is not enough — `//evil.example.com` passes it and browsers treat it as another origin.
 9. **Every route answers every method it is registered for.** A resource route with only an `action` must still export a `loader` (return 405), or a GET falls through to React Router's own error handler.
