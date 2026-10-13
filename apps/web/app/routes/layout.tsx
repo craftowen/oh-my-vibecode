@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Form, Link, NavLink, Outlet, useLocation, useLoaderData, useNavigation } from "react-router";
 import { LayoutDashboard, LogOut, Menu, Settings, X } from "lucide-react";
 import { authMiddleware, sessionContext } from "../lib/middleware";
+import { cachedClientLoader } from "../lib/client-cache";
 import { getTheme } from "../lib/theme";
 import { cn } from "../lib/cn";
 import { Button } from "../components/ui/button";
@@ -15,6 +16,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const session = context.get(sessionContext)!;
   return { user: session.user, theme: getTheme(request) };
 }
+
+export const clientLoader = (args: Route.ClientLoaderArgs) =>
+  cachedClientLoader(args, "routes/layout");
 
 const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },

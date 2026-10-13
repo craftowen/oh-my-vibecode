@@ -4,6 +4,8 @@
   "compatibility_date": "2026-08-15",
   "compatibility_flags": ["nodejs_compat"],
   "main": "server.ts",
+  // Runs the Worker near D1 when a request makes several D1 round trips, instead of near the user.
+  "placement": { "mode": "smart" },
   "d1_databases": [
     {
       "binding": "DB",

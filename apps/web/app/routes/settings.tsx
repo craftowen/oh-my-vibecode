@@ -8,6 +8,7 @@ import { buildAuth } from "../lib/auth.server";
 import { authErrorMessage } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
+import { cachedClientLoader } from "../lib/client-cache";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
 import { MAX_NAME_LENGTH, field, type FormErrors } from "../lib/validation";
 import { EmptyState } from "../components/empty-state";
@@ -48,6 +49,9 @@ export async function loader({ context }: Route.LoaderArgs) {
     sessions,
   };
 }
+
+export const clientLoader = (args: Route.ClientLoaderArgs) =>
+  cachedClientLoader(args);
 
 /** What every branch of the action returns, so `actionData` has one shape. */
 type ActionResult = { errors: FormErrors; message?: string };

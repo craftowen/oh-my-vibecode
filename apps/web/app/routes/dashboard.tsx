@@ -6,6 +6,7 @@ import { ArrowRight, KeyRound, Users } from "lucide-react";
 import { session as sessionTable, user } from "@repo/db";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
+import { cachedClientLoader } from "../lib/client-cache";
 import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
 import {
@@ -47,6 +48,9 @@ export async function loader({ context }: Route.LoaderArgs) {
 
   return { name: session.user.name || session.user.email, stats };
 }
+
+export const clientLoader = (args: Route.ClientLoaderArgs) =>
+  cachedClientLoader(args);
 
 type Stats = { users: number; sessions: number };
 
