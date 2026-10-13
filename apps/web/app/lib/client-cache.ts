@@ -20,7 +20,7 @@
  * parent loaders on every navigation, so parents must be cached too or a cache
  * hit still costs a request: `cachedClientLoader(args, "routes/layout")`.
  * The first (SSR) render keeps `hydrate` false, so the server HTML is used as
- * is and the root seeds its data into the cache (seedClientCache).
+ * is and the root seeds its data into the cache (setClientCacheUser).
  */
 
 /** Entries younger than this are used as is; older ones render, then revalidate. */
@@ -71,14 +71,34 @@ export function invalidateClientCache() {
   channel?.postMessage("invalidate");
 }
 
+/** One route's data on screen — parents carry their route id as scope, the leaf none. */
+export interface ScreenData {
+  scope?: string;
+  data: unknown;
+}
+
 /**
  * The root calls this with the protected layout's user id, or null outside it.
  * A different user drops the cache so no one sees another account's data.
+ * `screen` is what is rendered at `url` right now, seeded under the new user:
+ * the SSR data on first load, and the screen a JS sign-in landed on — it was
+ * loaded while the user was still unknown, so nothing of it was stored and the
+ * next navigation would refetch root and layout.
  */
-export function setClientCacheUser(next: string | null) {
+export function setClientCacheUser(next: string | null, url = "", screen: ScreenData[] = []) {
   if (next === user) return;
   user = next;
   clear();
+  for (const { scope, data } of screen) seedClientCache(url, scope, data);
+}
+
+/**
+ * Whether the focus/poll revalidation may run. Signed out nothing is cached, so
+ * it would only cost D1 reads; and revalidate() resets actionData, so a form's
+ * error or confirmation would vanish when the user tabs back.
+ */
+export function canRefreshInBackground(actionData: unknown) {
+  return user !== null && actionData == null;
 }
 
 /** Marks a request as a prefetch — it only fills the cache, and a failure resolves to null instead of an error page. */
@@ -211,11 +231,11 @@ async function load<T>(key: string, serverLoader: () => Promise<T>): Promise<T> 
 }
 
 /**
- * Seeds the first (SSR) render's data, so the first navigation already skips
- * the parent loaders and Back is instant. Same key rules as cachedClientLoader;
+ * Seeds data already on screen, so the first navigation already skips the
+ * parent loaders and Back is instant. Same key rules as cachedClientLoader;
  * an existing entry is left alone.
  */
-export function seedClientCache(url: string, scope: string | undefined, data: unknown) {
+function seedClientCache(url: string, scope: string | undefined, data: unknown) {
   const key = keyOf(url, scope);
   if (user && !entries.has(key)) store(key, data, generation);
 }

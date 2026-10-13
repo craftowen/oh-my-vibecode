@@ -133,14 +133,25 @@ function ToastItem({
   onDismiss: (id: number) => void;
 }) {
   const Icon = ICONS[toast.variant];
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  // Paused while pointed at or focused: a keyboard user who tabbed to the
+  // dismiss button would otherwise lose focus to <body> when the toast
+  // vanished under them (WCAG 2.2.1, timing adjustable).
+  const paused = hovered || focused;
 
   useEffect(() => {
+    if (paused) return;
     const timer = setTimeout(() => onDismiss(toast.id), DISMISS_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [toast.id, onDismiss]);
+  }, [toast.id, onDismiss, paused]);
 
   return (
     <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       className={cn(
         "pointer-events-auto flex items-start gap-3 rounded-lg border bg-card p-3 shadow-lg",
         STYLES[toast.variant],

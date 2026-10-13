@@ -23,6 +23,7 @@ import { nonceContext } from "./lib/app-context";
 import { getTheme } from "./lib/theme";
 import {
   cachedClientLoader,
+  canRefreshInBackground,
   FRESH_MS,
   hasClientCache,
   hasFreshClientCache,
@@ -31,7 +32,7 @@ import {
   PREFETCH_PARAM,
   type PrefetchRequest,
   refreshFromServer,
-  seedClientCache,
+  type ScreenData,
   setClientCacheUser,
   takeRefreshWanted,
 } from "./lib/client-cache";
@@ -86,7 +87,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="color-scheme" content="light dark" />
         <Meta />
-        <Links />
+        {/* The server reads the nonce from context, the client only from this
+            prop — without it the critical-CSS <link> fails hydration in dev. */}
+        <Links nonce={nonce} />
         {theme === null && (
           <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
         )}
@@ -167,26 +170,33 @@ function ClientCacheSync() {
   const here = useRef("");
   here.current = location.pathname + location.search;
 
-  useEffect(() => setClientCacheUser(cacheUser), [cacheUser]);
+  useEffect(() => {
+    // Seed the screen the user was found on (SSR data, or where a JS sign-in
+    // landed) — parents keyed by route id, the leaf by URL, as in cachedClientLoader.
+    const screen: ScreenData[] = [];
+    matches.forEach((m, i) => {
+      if (!manifest?.routes[m.id]?.hasClientLoader) return;
+      screen.push({ scope: i === matches.length - 1 ? undefined : m.id, data: m.loaderData });
+    });
+    setClientCacheUser(cacheUser, location.pathname + location.search, screen);
+    // Only on a user change on purpose — later screens fill the cache via clientLoader.
+  }, [cacheUser]);
 
   useEffect(() => {
     lastRefresh.current = Date.now(); // The first screen just came from the server.
-    // Seed the SSR data — parents keyed by route id, the leaf by URL (same rule as cachedClientLoader).
-    const url = window.location.pathname + window.location.search;
-    matches.forEach((m, i) => {
-      if (!manifest?.routes[m.id]?.hasClientLoader) return;
-      seedClientCache(url, i === matches.length - 1 ? undefined : m.id, m.loaderData);
-    });
-    // First render's matches only on purpose — later screens fill the cache via clientLoader.
   }, []);
 
+  // location.key on purpose: a cache hit resolves in microtasks, so React batches
+  // loading→idle into one commit and navigation.state alone never changes.
   useEffect(() => {
     if (navigation.state === "idle" && takeRefreshWanted()) refresh.current();
-  }, [navigation.state]);
+  }, [navigation.state, location.key]);
 
   useEffect(() => {
     const idle = () =>
-      document.visibilityState === "visible" && router?.state.navigation.state === "idle";
+      document.visibilityState === "visible" &&
+      router?.state.navigation.state === "idle" &&
+      canRefreshInBackground(router.state.actionData);
     const onVisible = () => {
       if (idle() && Date.now() - lastRefresh.current > FRESH_MS) refresh.current();
     };

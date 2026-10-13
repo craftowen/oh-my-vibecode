@@ -1,5 +1,5 @@
 import { Suspense, use } from "react";
-import { Form, data, useFetcher, useNavigation } from "react-router";
+import { Form, data, useFetcher, useFetchers, useNavigation } from "react-router";
 import { and, eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Monitor, ShieldCheck, ShieldAlert } from "lucide-react";
@@ -80,6 +80,11 @@ export async function action({ request, context }: Route.ActionArgs) {
           });
         }
         await auth.api.updateUser({ body: { name }, headers: request.headers });
+        // authMiddleware resolved the session before this action, and a no-JS
+        // POST renders this same request's loaders — without this every
+        // screen would show the old name after a successful save.
+        const session = context.get(sessionContext)!;
+        context.set(sessionContext, { ...session, user: { ...session.user, name } });
         return ok("Profile updated.");
       }
 
@@ -137,6 +142,12 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
       </header>
 
       {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
+      {/* The toast needs JS; without it this is the only sign the save worked. */}
+      {actionData?.message && (
+        <noscript>
+          <Alert>{actionData.message}</Alert>
+        </noscript>
+      )}
 
       <Card>
         <CardHeader>
@@ -207,6 +218,11 @@ function SessionsCard({ sessions: pending, currentSessionToken }: {
   currentSessionToken: string;
 }) {
   const sessions = use(pending);
+  // Optimistic: a row disappears the moment its revoke is submitted. It stays
+  // mounted (hidden) so its fetcher can still toast or show an error.
+  const revoking = useFetchers()
+    .filter((f) => f.formData?.get("intent") === "revoke-session")
+    .map((f) => f.formData?.get("token"));
   return (
     <Card>
       <CardHeader>
@@ -229,6 +245,7 @@ function SessionsCard({ sessions: pending, currentSessionToken }: {
               return (
                 <li
                   key={item.id}
+                  hidden={revoking.includes(item.token)}
                   className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start"
                 >
                   <Monitor

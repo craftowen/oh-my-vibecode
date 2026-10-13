@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cachedClientLoader,
+  canRefreshInBackground,
   invalidateClientCache,
   invalidateOnMutation,
   setClientCacheUser,
@@ -116,5 +117,32 @@ describe("client cache", () => {
     await cachedClientLoader(afterPost);
     expect(afterPost.serverLoader).toHaveBeenCalledOnce();
     expect(next).toHaveBeenCalledTimes(2);
+  });
+
+  // Regression: after a JS sign-in the landing screen loaded while the user was
+  // still unknown, so nothing was stored and the next click refetched root and layout.
+  it("seeds the screen on screen when the user becomes known", async () => {
+    setClientCacheUser(null);
+    setClientCacheUser("user-2", "/dashboard", [
+      { scope: "routes/layout", data: { user: { id: "user-2" } } },
+      { data: { n: 2 } },
+    ]);
+    await settle();
+
+    const layout = args("http://localhost/settings");
+    await cachedClientLoader(layout, "routes/layout");
+    expect(layout.serverLoader).not.toHaveBeenCalled();
+    const leaf = args();
+    expect(await cachedClientLoader(leaf)).toEqual({ n: 2 });
+    expect(leaf.serverLoader).not.toHaveBeenCalled();
+  });
+
+  // Regression: the focus/60s revalidation reset actionData, so a login error or
+  // a settings form error disappeared when the user tabbed back.
+  it("allows background refresh only signed in and with no form result on screen", () => {
+    expect(canRefreshInBackground(undefined)).toBe(true);
+    expect(canRefreshInBackground({ errors: { name: "Name is required." } })).toBe(false);
+    setClientCacheUser(null);
+    expect(canRefreshInBackground(undefined)).toBe(false);
   });
 });
