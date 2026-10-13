@@ -47,8 +47,8 @@ const sessions = drizzle(env.DB)
 - The non-null assertion `!` is reserved for `context.get(…)!` where middleware
   or `server.ts` guarantees the value. Anywhere else, handle the `undefined`.
 - Route arguments are typed from the generated `Route` namespace
-  (`Route.LoaderArgs`, `Route.ActionArgs`, `Route.ComponentProps`,
-  `Route.MetaFunction`, `Route.MiddlewareFunction`). Never hand-write these.
+  (`Route.LoaderArgs`, `Route.ClientLoaderArgs`, `Route.ActionArgs`,
+  `Route.ComponentProps`, `Route.MetaFunction`, `Route.MiddlewareFunction`). Never hand-write these.
 - Action error objects are annotated `FormErrors` (or `Record<string, string>`)
   at the declaration site. Without it each branch infers its own literal
   shape and `actionData.errors.email` stops compiling.
@@ -130,6 +130,7 @@ imports
 export const meta
 export const middleware      (layouts only)
 export async function loader
+export const clientLoader     (every signed-in screen)
 type / const helpers the action needs (ActionResult, ok(), fail())
 export async function action
 local components (StatCard, StatSkeleton, …)
@@ -139,6 +140,14 @@ export default function Page
 - Loaders `await` only what the shell needs. Slow queries are returned as
   promises and rendered with `<Suspense>` + `use()`. Start independent queries
   before awaiting any of them.
+- Every signed-in screen exports
+  `export const clientLoader = (args: Route.ClientLoaderArgs) => cachedClientLoader(args);`
+  on one line, nothing else. Signed-out pages never do. Parent routes pass
+  their route id as the scope argument (`"routes/layout"`).
+- Mutations are `<Form method="post">` or `useFetcher` submissions, never a
+  hand-written `fetch()`: that is what lets the root `invalidateOnMutation`
+  empty the client cache. Row actions render optimistically from
+  `fetcher.formData` / `useFetchers()`.
 - Actions read fields through `field(form, name)` (trimmed string), validate,
   rate-limit, then call the service. They return
   `data({ errors, values }, { status: 400 })` on user error and
@@ -166,6 +175,8 @@ export default function Page
   tailwind-merge, so it cannot override base styles.
 - Hooks are called unconditionally at the top of the component. Derived
   booleans come right after (`const submitting = navigation.formAction === "/login"`).
+- A list query has an `index()` on the columns it filters and sorts on, in
+  `packages/db/src/schema.ts` next to the table.
 - Anything that must survive hydration (timestamps, theme) goes through the
   existing helper (`<LocalTime>`, `getTheme`) instead of reading `window`
   during render.
@@ -259,5 +270,7 @@ The single most visible house rule: **comments explain why, not what.**
 1. `bun run check` (typecheck, build, test) is green.
 2. New behaviour has a spec that drives the route, not just the API.
 3. No new runtime dependency, no raw palette class, no `any`, no unexplained `!`.
-4. Every exported symbol has a JSDoc that says *why*.
-5. `AGENTS.md` and this file still describe the code as it now is.
+4. Every signed-in screen exports the cached `clientLoader`; every mutation goes
+   through `<Form>` / `useFetcher`.
+5. Every exported symbol has a JSDoc that says *why*.
+6. `AGENTS.md` and this file still describe the code as it now is.

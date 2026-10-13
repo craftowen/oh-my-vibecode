@@ -22,7 +22,7 @@ bun dev           # http://localhost:5173
 | **Auth** | Better Auth on D1 — email/password, email verification, password reset, session management, optional Google |
 | **Database** | D1 + Drizzle ORM in a shared `@repo/db` package, generated migrations committed to `packages/db/drizzle/` |
 | **UI** | Tailwind v4 with shadcn-compatible design tokens, dark mode, 7 primitives, toasts, accessible forms |
-| **Performance** | Streaming SSR (`Suspense` + `use`), `prefetch="intent"`, session resolved once by middleware |
+| **Performance** | Local-first client cache (revisits render from memory, mutations invalidate it), streaming SSR (`Suspense` + `use`), intent prefetch, smart placement, session resolved once by middleware |
 | **Hardening** | Per-IP rate limiting in D1, security headers, nonce-based CSP in production |
 | **Testing** | Vitest on `@cloudflare/vitest-pool-workers` — the real Workers runtime, not a mock |
 | **CI** | GitHub Actions running `typecheck && build && test` on every push and PR, and deploying `main` once that passes |
@@ -143,7 +143,7 @@ bun dev           # http://localhost:5173
 | **인증** | Better Auth on D1 — 이메일/비밀번호, 이메일 인증, 비밀번호 재설정, 세션 관리, 선택적 Google |
 | **데이터베이스** | D1 + Drizzle ORM, 공유 패키지 `@repo/db`, 생성된 마이그레이션은 `packages/db/drizzle/`에 커밋 |
 | **UI** | Tailwind v4 + shadcn 호환 디자인 토큰, 다크모드, 프리미티브 7종, 토스트, 접근성 갖춘 폼 |
-| **성능** | 스트리밍 SSR(`Suspense` + `use`), `prefetch="intent"`, 미들웨어가 세션을 1회만 조회 |
+| **성능** | 로컬 퍼스트 클라이언트 캐시(재방문은 메모리에서 렌더, 변경 시 자동 무효화), 스트리밍 SSR(`Suspense` + `use`), 인텐트 프리패치, 스마트 배치, 미들웨어가 세션을 1회만 조회 |
 | **하드닝** | D1 기반 IP별 레이트리밋, 보안 헤더, 운영 빌드 nonce CSP |
 | **테스트** | `@cloudflare/vitest-pool-workers` — 목이 아닌 실제 Workers 런타임 |
 | **CI** | 푸시·PR마다 `typecheck && build && test` 실행, 통과하면 `main`을 배포 |

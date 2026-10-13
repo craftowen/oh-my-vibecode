@@ -7,7 +7,7 @@ sees their own rows of.
 
 ```ts
 // packages/db/src/schema.ts
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { user } from "./auth-schema";
 
 export const note = sqliteTable("note", {
@@ -17,7 +17,10 @@ export const note = sqliteTable("note", {
     .references(() => user.id, { onDelete: "cascade" }),
   body: text("body").notNull(),
   createdAt: integer("createdAt", { mode: "timestamp" }).notNull(),
-});
+}, (t) => [
+  // The list filters on userId and sorts on createdAt — one index covers both.
+  index("note_userId_createdAt_idx").on(t.userId, t.createdAt),
+]);
 ```
 
 ```bash
@@ -31,11 +34,12 @@ automatically, and every app on the D1 sees the table through `@repo/db`.
 
 ```tsx
 // apps/web/app/routes/notes.tsx
-import { Form, data, useNavigation } from "react-router";
+import { Form, data, useFetcher, useNavigation } from "react-router";
 import { drizzle } from "drizzle-orm/d1";
 import { desc, eq, and } from "drizzle-orm";
 import { note } from "@repo/db";
 import { cloudflareContext } from "../lib/app-context";
+import { cachedClientLoader } from "../lib/client-cache";
 import { sessionContext } from "../lib/middleware";
 import { field, type FormErrors } from "../lib/validation";
 import { EmptyState } from "../components/empty-state";
@@ -58,6 +62,9 @@ export async function loader({ context }: Route.LoaderArgs) {
 
   return { notes };
 }
+
+// Revisits render from the in-memory cache; any POST on the page clears it.
+export const clientLoader = (args: Route.ClientLoaderArgs) => cachedClientLoader(args);
 
 export async function action({ request, context }: Route.ActionArgs) {
   const session = context.get(sessionContext)!;
@@ -90,7 +97,33 @@ export async function action({ request, context }: Route.ActionArgs) {
 ```
 
 Render the list inside `<Suspense>` with `use(notes)`, exactly like
-`apps/web/app/routes/dashboard.tsx` does for its stats.
+`apps/web/app/routes/dashboard.tsx` does for its stats. Each row deletes
+through its own fetcher and disappears on click, not after the round-trip:
+
+```tsx
+interface NoteRowProps {
+  row: typeof note.$inferSelect;
+}
+
+function NoteRow({ row }: NoteRowProps) {
+  const fetcher = useFetcher();
+  // Optimistic: if the action fails, revalidation brings the row back.
+  if (fetcher.formData?.get("intent") === "delete") return null;
+  return (
+    <li className="flex items-center justify-between">
+      <span>{row.body}</span>
+      <fetcher.Form method="post">
+        <input type="hidden" name="intent" value="delete" />
+        <input type="hidden" name="id" value={row.id} />
+        <Button type="submit" variant="ghost" size="sm">Delete</Button>
+      </fetcher.Form>
+    </li>
+  );
+}
+```
+
+No cache invalidation code: the root's `invalidateOnMutation` empties the
+client cache around every POST.
 
 ## 3. Register it
 
