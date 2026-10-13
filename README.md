@@ -14,6 +14,8 @@ bun run setup     # local D1 + .dev.vars — no Cloudflare account needed
 bun dev           # http://localhost:5173
 ```
 
+In local dev, `/signup` comes pre-filled with a demo account (`demo@example.com` / `password1234`) — submit it as is to land on the dashboard.
+
 ## What's in the box
 
 | | |
@@ -38,7 +40,7 @@ bun dev                   # dev server at localhost:5173
 bun run check             # typecheck && build && test — the gate for "done"
 bun run db:generate       # after editing packages/db/src/schema.ts
 bun run db:migrate:local  # apply migrations to local D1
-bun run deploy            # manual wrangler deploy (see Deploying)
+bun run deploy            # build + manual wrangler deploy (see Deploying)
 ```
 
 For a single package: `bun run --cwd apps/web <script>` or `bun --filter @repo/web <script>`.
@@ -52,7 +54,7 @@ bun run db:migrate:remote
 bun run deploy
 ```
 
-`apps/web/wrangler.jsonc`'s `database_id` is a placeholder: local dev and tests work with it, and nothing replaces it for you on a manual deploy. In CI, the `deploy` job of `.github/workflows/ci.yml` runs on pushes to `main` after the checks pass, overwrites the whole `apps/web/wrangler.jsonc` with the `CLOUDFLARE_WRANGLER_CONFIG` repository secret (alongside `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`) and deploys from `apps/web`. Because the secret replaces the file, it must match the committed one apart from the real `database_id`: `"migrations_dir": "../../packages/db/drizzle"` (the old `"drizzle"` no longer resolves) and the `send_email` `EMAIL` binding. Set `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` as production secrets:
+`apps/web/wrangler.jsonc`'s `database_id` is a placeholder: local dev and tests work with it, and nothing replaces it for you on a manual deploy. In CI, the `deploy` job of `.github/workflows/ci.yml` runs on pushes to `main` after the checks pass, overwrites the whole `apps/web/wrangler.jsonc` with the `CLOUDFLARE_WRANGLER_CONFIG` repository secret (alongside `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`) and deploys from `apps/web`. Because the secret replaces the file, it must match the committed one apart from the real `database_id`: `"migrations_dir": "../../packages/db/drizzle"` (the old `"drizzle"` no longer resolves), `"placement": { "mode": "smart" }`, and every binding or trigger you add later. The one intended difference is the `send_email` `EMAIL` binding: production leaves it out until the domain's Email Routing is verified, so verification and reset emails are written to the Worker log instead of being delivered. CI does not apply migrations — run `bun run db:migrate:remote` before merging a schema change. Set `BETTER_AUTH_SECRET` and `BETTER_AUTH_URL` as production secrets:
 
 ```bash
 bunx wrangler secret put BETTER_AUTH_SECRET --config apps/web/wrangler.jsonc
@@ -61,9 +63,12 @@ bunx wrangler secret put BETTER_AUTH_URL --config apps/web/wrangler.jsonc
 
 ## Email, OAuth and the rest
 
-Email verification and password reset are wired end to end. Without the `EMAIL`
-send_email binding (local dev, tests), messages are printed to the Worker console — so you can walk the entire
-reset flow locally without signing up for anything. See
+Email verification and password reset are wired end to end. Locally (`bun dev`,
+tests) Miniflare simulates the `EMAIL` send_email binding: nothing leaves your
+machine, and the console prints each message's headers plus the paths of the
+files holding its body — open the text file to copy the link, so you can walk the
+entire reset flow without signing up for anything. A deployment without the
+binding logs the message, link included, to the Worker console instead. See
 [docs/recipes/](./docs/recipes/) for switching on a real provider, adding OAuth
 providers, R2 uploads, Workers AI, cron and a second app.
 
@@ -135,6 +140,8 @@ bun run setup     # 로컬 D1 + .dev.vars — Cloudflare 계정 없이 동작
 bun dev           # http://localhost:5173
 ```
 
+로컬 개발에서는 `/signup`에 데모 계정(`demo@example.com` / `password1234`)이 미리 채워져 있어, 그대로 제출하면 대시보드로 들어갑니다.
+
 ## 구성
 
 | | |
@@ -159,7 +166,7 @@ bun dev                   # 개발 서버
 bun run check             # typecheck && build && test — "완료" 판정 기준
 bun run db:generate       # packages/db/src/schema.ts 수정 후
 bun run db:migrate:local  # 로컬 D1에 마이그레이션 적용
-bun run deploy            # 수동 wrangler deploy (배포 절 참고)
+bun run deploy            # 빌드 + 수동 wrangler deploy (배포 절 참고)
 ```
 
 패키지 하나만: `bun run --cwd apps/web <script>` 또는 `bun --filter @repo/web <script>`.
@@ -173,13 +180,15 @@ bun run db:migrate:remote
 bun run deploy
 ```
 
-`apps/web/wrangler.jsonc`의 `database_id`는 플레이스홀더입니다. 로컬 개발과 테스트는 그대로 동작하지만, 수동 배포 때는 아무것도 치환해 주지 않습니다. CI에서는 `.github/workflows/ci.yml`의 `deploy` job이 `main` 푸시 때 검사 통과 후 실행되며, `apps/web/wrangler.jsonc` 전체를 저장소 시크릿 `CLOUDFLARE_WRANGLER_CONFIG`로 덮어쓰고 `apps/web`에서 배포합니다(`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`도 필요). 시크릿이 파일을 통째로 대체하므로 실제 `database_id` 외에는 커밋된 파일과 같아야 합니다: `"migrations_dir": "../../packages/db/drizzle"`(예전 `"drizzle"`은 더 이상 경로가 맞지 않음)와 `send_email`의 `EMAIL` 바인딩. 운영 시크릿은 `bunx wrangler secret put BETTER_AUTH_SECRET --config apps/web/wrangler.jsonc`(`BETTER_AUTH_URL`도 동일)로 설정합니다.
+`apps/web/wrangler.jsonc`의 `database_id`는 플레이스홀더입니다. 로컬 개발과 테스트는 그대로 동작하지만, 수동 배포 때는 아무것도 치환해 주지 않습니다. CI에서는 `.github/workflows/ci.yml`의 `deploy` job이 `main` 푸시 때 검사 통과 후 실행되며, `apps/web/wrangler.jsonc` 전체를 저장소 시크릿 `CLOUDFLARE_WRANGLER_CONFIG`로 덮어쓰고 `apps/web`에서 배포합니다(`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`도 필요). 시크릿이 파일을 통째로 대체하므로 실제 `database_id` 외에는 커밋된 파일과 같아야 합니다: `"migrations_dir": "../../packages/db/drizzle"`(예전 `"drizzle"`은 더 이상 경로가 맞지 않음), `"placement": { "mode": "smart" }`, 그리고 나중에 추가하는 모든 바인딩·트리거. 의도된 차이는 `send_email`의 `EMAIL` 바인딩 하나로, 도메인의 Email Routing 인증 전까지 운영에서는 빠져 있어 인증·재설정 메일이 발송되지 않고 Worker 로그에만 남습니다. CI는 마이그레이션을 적용하지 않으므로, 스키마 변경을 머지하기 전에 `bun run db:migrate:remote`를 먼저 실행하세요. 운영 시크릿은 `bunx wrangler secret put BETTER_AUTH_SECRET --config apps/web/wrangler.jsonc`(`BETTER_AUTH_URL`도 동일)로 설정합니다.
 
 ## 이메일·OAuth·그 외
 
-이메일 인증과 비밀번호 재설정이 끝까지 배선되어 있습니다. `EMAIL` send_email 바인딩이 없으면(로컬 개발·테스트)
-메일 내용이 Worker 콘솔에 출력되므로, 아무 데도 가입하지 않고 재설정 플로우 전체를
-로컬에서 확인할 수 있습니다. 실제 발송 provider 연결, OAuth 추가, R2 업로드,
+이메일 인증과 비밀번호 재설정이 끝까지 배선되어 있습니다. 로컬(`bun dev`·테스트)에서는
+Miniflare가 `EMAIL` send_email 바인딩을 흉내 내어 실제로 발송하지 않고, 콘솔에 메일 헤더와
+본문이 저장된 파일 경로를 출력합니다. 텍스트 파일에서 링크를 복사하면 아무 데도 가입하지 않고
+재설정 플로우 전체를 로컬에서 확인할 수 있습니다. 바인딩 없이 배포된 환경에서는 링크를 포함한
+메일 내용이 Worker 콘솔에 기록됩니다. 실제 발송 provider 연결, OAuth 추가, R2 업로드,
 Workers AI, cron, 두 번째 앱 추가는 [docs/recipes/](./docs/recipes/) 참고.
 
 ## 디자인 시스템

@@ -27,7 +27,7 @@ bun run cf-typegen
 React Router parses `multipart/form-data` for you; the file arrives as a `File`.
 
 ```tsx
-// apps/web/app/routes/upload.tsx
+// apps/web/app/routes/upload.tsx — registered inside the protected layout
 import { data } from "react-router";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
@@ -84,7 +84,11 @@ Do not make the bucket public if the objects are per-user. Stream them through a
 route that checks the session first:
 
 ```tsx
-// apps/web/app/routes/uploads.$key.tsx  → route("uploads/*", "routes/uploads.$key.tsx")
+// apps/web/app/routes/uploads.$key.tsx
+// Register it INSIDE the protected layout in app/routes.ts:
+//   route("uploads/*", "routes/uploads.$key.tsx")
+// Outside it, authMiddleware never runs, sessionContext is empty and
+// context.get(sessionContext) throws — every download is a 500.
 export async function loader({ params, context }: Route.LoaderArgs) {
   const session = context.get(sessionContext)!;
   const { env } = context.get(cloudflareContext)!;

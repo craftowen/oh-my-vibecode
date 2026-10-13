@@ -6,10 +6,17 @@ already call it, so wiring a provider is the only thing left to do.
 
 ## Local development
 
-When the `EMAIL` binding is not present or in local testing, the message
-(including the verification or reset link) is printed to the Worker console.
-That is enough to walk the whole flow locally — copy the link out of `bun dev`'s
-output and paste it into the browser.
+`bun dev` and the tests run with the `EMAIL` binding declared in
+`apps/web/wrangler.jsonc`, and Miniflare simulates it: nothing is delivered, and
+the console prints `send_email binding called with MessageBuilder:`, the headers,
+and the paths of a text and an HTML file holding the body. Open the text file,
+copy the verification or reset link and paste it into the browser — that is
+enough to walk the whole flow locally.
+
+Where the binding is absent (a deployment whose `wrangler.jsonc` has no
+`send_email` entry — this repo's production config, until Email Routing is
+verified), `sendEmail` logs the message, link included, to the Worker console
+instead of sending it.
 
 ## Using Cloudflare Workers Send Email
 
@@ -25,7 +32,9 @@ binding in `apps/web/wrangler.jsonc`:
 ]
 ```
 
-1. Enable Email Routing in your Cloudflare dashboard for your domain.
+1. Enable Email Routing in your Cloudflare dashboard for your domain. CI
+   deploys with the `CLOUDFLARE_WRANGLER_CONFIG` secret instead of the
+   committed file, so add the same `send_email` entry to that secret too.
 2. Set `EMAIL_FROM` to an address on your verified Cloudflare domain:
 
 ```bash

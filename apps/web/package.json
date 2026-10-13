@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "react-router dev",
     "build": "react-router build",
-    "deploy": "wrangler deploy",
+    "deploy": "bun run build && wrangler deploy",
     "setup": "bun scripts/setup.ts",
     "typecheck": "react-router typegen && tsc",
     "check": "bun run typecheck && bun run build && bun run test",

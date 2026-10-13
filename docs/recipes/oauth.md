@@ -43,13 +43,18 @@ socialProviders: {
 ```
 
 Then add the button. Social sign-in is the one auth path that stays on the
-client, because it is a browser redirect:
+client, because it is a browser redirect. Import the auth client on click, as the
+Google button in `apps/web/app/routes/login.tsx` does — a static import puts
+~29 kB back into the `/login` bundle:
 
 ```tsx
 <Button
   variant="outline"
   className="w-full"
-  onClick={() => authClient.signIn.social({ provider: "github", callbackURL: "/dashboard" })}
+  onClick={async () => {
+    const { authClient } = await import("../lib/auth.client");
+    await authClient.signIn.social({ provider: "github", callbackURL: "/dashboard" });
+  }}
 >
   Continue with GitHub
 </Button>

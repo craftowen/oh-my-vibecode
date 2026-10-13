@@ -6,6 +6,11 @@ Each one assumes the patterns in [AGENTS.md](../../AGENTS.md) — bindings from
 UI built from `apps/web/app/components/ui/*`, tables in `packages/db` imported as
 `@repo/db`. Commands run from the repo root.
 
+A recipe that adds a binding or trigger to `apps/web/wrangler.jsonc` (AI, R2,
+crons, queues, `send_email`) also needs it in the `CLOUDFLARE_WRANGLER_CONFIG`
+secret: CI deploys with that secret in place of the committed file, so a binding
+only in the file is missing in production and `env.<NAME>` is `undefined`.
+
 | Recipe | What it covers |
 |---|---|
 | [email.md](./email.md) | Sending real email; swapping Cloudflare Send Email for another provider |
