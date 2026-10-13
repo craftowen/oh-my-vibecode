@@ -3,7 +3,7 @@ import { buildAuth } from "../lib/auth.server";
 import { callAuth, redirectWithSession } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
-import { field, type FormErrors } from "../lib/validation";
+import { field, safeRedirect, type FormErrors } from "../lib/validation";
 import { AuthShell } from "../components/auth-shell";
 import { Field } from "../components/field";
 import { Alert } from "../components/ui/alert";
@@ -19,12 +19,15 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     headers: request.headers,
     returnHeaders: true,
   });
-  if (session) throw redirect("/dashboard", { headers });
-
   const url = new URL(request.url);
+  // "" when absent or unsafe, so the form only carries a vetted path.
+  const redirectTo = safeRedirect(url.searchParams.get("redirectTo"), "");
+  if (session) throw redirect(redirectTo || "/dashboard", { headers });
+
   return data({
     hasGoogle: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
     justReset: url.searchParams.has("reset"),
+    redirectTo,
   }, { headers });
 }
 
@@ -70,13 +73,18 @@ export async function action({ request, context }: Route.ActionArgs) {
     const formError: FormErrors = { form: result.error };
     return data({ errors: formError, values: { email } }, { status: 400 });
   }
-  return redirectWithSession(result.response, "/dashboard");
+  // Re-checked here: the hidden field is client input like any other.
+  return redirectWithSession(
+    result.response,
+    safeRedirect(form.get("redirectTo"), "/dashboard"),
+  );
 }
 
 export default function Login({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const submitting = navigation.formAction === "/login";
   const errors = actionData?.errors ?? {};
+  const { redirectTo } = loaderData;
 
   return (
     <AuthShell
@@ -86,7 +94,9 @@ export default function Login({ loaderData, actionData }: Route.ComponentProps) 
         <>
           No account yet?{" "}
           <Link
-            to="/signup"
+            to={redirectTo
+              ? `/signup?redirectTo=${encodeURIComponent(redirectTo)}`
+              : "/signup"}
             prefetch="intent"
             className="text-primary underline-offset-4 hover:underline"
           >
@@ -105,6 +115,7 @@ export default function Login({ loaderData, actionData }: Route.ComponentProps) 
       {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
 
       <Form method="post" className="space-y-4" replace>
+        {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
         <Field
           label="Email"
           name="email"
@@ -160,7 +171,7 @@ export default function Login({ loaderData, actionData }: Route.ComponentProps) 
               );
               await authClient.signIn.social({
                 provider: "google",
-                callbackURL: "/dashboard",
+                callbackURL: redirectTo || "/dashboard",
               });
             }}
           >

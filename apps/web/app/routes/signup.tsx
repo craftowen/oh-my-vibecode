@@ -7,6 +7,7 @@ import {
   MAX_NAME_LENGTH,
   MIN_PASSWORD_LENGTH,
   field,
+  safeRedirect,
   type FormErrors,
 } from "../lib/validation";
 import { AuthShell } from "../components/auth-shell";
@@ -21,7 +22,8 @@ export const meta: Route.MetaFunction = () => [
 
 /** The credentials `bun run setup` tells you to use. They are pre-filled here —
  * on the SIGNUP page, where they actually work — so a fresh clone reaches the
- * dashboard in one click. */
+ * dashboard in one click. Local dev only: on a deployed site a pre-filled,
+ * public password is one shared account anybody can sign in to. */
 const DEMO = {
   name: "Demo User",
   email: "demo@example.com",
@@ -34,8 +36,19 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     headers: request.headers,
     returnHeaders: true,
   });
-  if (session) throw redirect("/dashboard", { headers });
-  return data(null, { headers });
+  // "" when absent or unsafe, so the form only carries a vetted path.
+  const redirectTo = safeRedirect(
+    new URL(request.url).searchParams.get("redirectTo"),
+    "",
+  );
+  if (session) throw redirect(redirectTo || "/dashboard", { headers });
+  // import.meta.env.DEV is replaced at build time: true under `bun dev`, false
+  // in the deployed build, so the demo values never reach production HTML or
+  // the client bundle.
+  return data(
+    { demo: import.meta.env.DEV ? DEMO : null, redirectTo },
+    { headers },
+  );
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -84,13 +97,21 @@ export async function action({ request, context }: Route.ActionArgs) {
     const formError: FormErrors = { form: result.error };
     return data({ errors: formError, values: { name, email } }, { status: 400 });
   }
-  return redirectWithSession(result.response, "/dashboard");
+  // Re-checked here: the hidden field is client input like any other.
+  return redirectWithSession(
+    result.response,
+    safeRedirect(form.get("redirectTo"), "/dashboard"),
+  );
 }
 
-export default function Signup({ actionData }: Route.ComponentProps) {
+export default function Signup({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const submitting = navigation.formAction === "/signup";
   const errors = actionData?.errors ?? {};
+  const { redirectTo } = loaderData;
+  // Only the first render is pre-filled: after a failed no-JS submit the demo
+  // password would silently replace the one the visitor typed.
+  const demo = actionData ? null : loaderData.demo;
 
   return (
     <AuthShell
@@ -100,7 +121,9 @@ export default function Signup({ actionData }: Route.ComponentProps) {
         <>
           Already have an account?{" "}
           <Link
-            to="/login"
+            to={redirectTo
+              ? `/login?redirectTo=${encodeURIComponent(redirectTo)}`
+              : "/login"}
             prefetch="intent"
             className="text-primary underline-offset-4 hover:underline"
           >
@@ -109,19 +132,22 @@ export default function Signup({ actionData }: Route.ComponentProps) {
         </>
       }
     >
-      <p className="rounded-md border border-dashed bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-        Pre-filled with the demo account from the README — submit as-is to get
-        straight into the dashboard, or replace it with your own details.
-      </p>
+      {demo && (
+        <p className="rounded-md border border-dashed bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          Pre-filled with the demo account from the README — submit as-is to get
+          straight into the dashboard, or replace it with your own details.
+        </p>
+      )}
 
       {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
 
       <Form method="post" className="space-y-4" replace>
+        {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
         <Field
           label="Name"
           name="name"
           autoComplete="name"
-          defaultValue={actionData?.values?.name ?? DEMO.name}
+          defaultValue={actionData?.values?.name ?? demo?.name}
           error={errors.name}
           maxLength={MAX_NAME_LENGTH}
           required
@@ -131,7 +157,7 @@ export default function Signup({ actionData }: Route.ComponentProps) {
           name="email"
           type="email"
           autoComplete="email"
-          defaultValue={actionData?.values?.email ?? DEMO.email}
+          defaultValue={actionData?.values?.email ?? demo?.email}
           error={errors.email}
           required
         />
@@ -141,7 +167,7 @@ export default function Signup({ actionData }: Route.ComponentProps) {
           type="password"
           autoComplete="new-password"
           minLength={MIN_PASSWORD_LENGTH}
-          defaultValue={DEMO.password}
+          defaultValue={demo?.password}
           error={errors.password}
           required
         />

@@ -1,3 +1,4 @@
+import { waitUntil } from "cloudflare:workers";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from "drizzle-orm/d1";
@@ -7,6 +8,13 @@ import { actionEmail, sendEmail } from "./email.server";
 /** Better Auth must be created lazily per-env: on Workers, bindings (env.DB)
  * only exist inside a request, never at module scope. */
 function createAuth(env: Env) {
+  // Fails closed on purpose. Without a secret Better Auth falls back to its
+  // public default and only refuses when NODE_ENV is "production", which a
+  // Worker never sets — anyone could then sign an email-verification token,
+  // and autoSignInAfterVerification turns that into a session for any account.
+  if (!env.BETTER_AUTH_SECRET) {
+    throw new Error("[auth] BETTER_AUTH_SECRET is not set; refusing to start auth.");
+  }
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL,
     secret: env.BETTER_AUTH_SECRET,
@@ -61,6 +69,10 @@ function createAuth(env: Env) {
     },
 
     advanced: {
+      // Emails go out after the response. Awaiting the send made a reset
+      // request for a real account a delivery round-trip slower than one for
+      // an unknown address — a timing oracle for the account list.
+      backgroundTasks: { handler: waitUntil },
       ipAddress: {
         // Without this Better Auth cannot resolve the caller and falls back to
         // ONE shared bucket per path — a single attacker would rate-limit

@@ -29,13 +29,27 @@ export interface RateLimitResult {
   retryAfter: number;
 }
 
-/** Best-effort client address. Cloudflare sets CF-Connecting-IP at the edge. */
+/**
+ * Best-effort client address. Cloudflare sets CF-Connecting-IP at the edge.
+ * An IPv6 address is cut to its /64: one subscriber or VPS is handed a whole
+ * /64, so counting full addresses gave an attacker 2^64 fresh buckets. Better
+ * Auth's own limiter buckets the same way (`ipv6Subnet`, default 64).
+ */
 export function clientIp(request: Request): string {
-  return (
+  const ip =
     request.headers.get("CF-Connecting-IP") ||
     request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ||
-    "unknown"
-  );
+    "unknown";
+  if (!ip.includes(":")) return ip;
+  // IPv4-mapped (::ffff:192.0.2.1) is one IPv4 client, not a /64.
+  if (ip.includes(".")) return ip.slice(ip.lastIndexOf(":") + 1);
+  const [head, tail = ""] = ip.toLowerCase().split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups = ip.includes("::")
+    ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right]
+    : left;
+  return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, "")).join(":")}::/64`;
 }
 
 export async function consumeRateLimit(

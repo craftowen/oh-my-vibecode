@@ -1,6 +1,8 @@
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-/** Better Auth's own tables. Generated — never edit auth-schema.ts by hand. */
+/** Better Auth's own tables. Generated — the only hand edits allowed in
+ * auth-schema.ts are index declarations mirroring Better Auth's own (see
+ * AGENTS.md → Constraints). */
 export * from "./auth-schema";
 
 /**

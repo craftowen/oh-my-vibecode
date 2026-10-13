@@ -1,10 +1,13 @@
 /**
  * Transactional email via Cloudflare Workers Send Email binding.
  *
- * - `env.EMAIL` binding present  → delivers through Cloudflare Send Email (`env.EMAIL.send`).
- * - binding not present / local → logs the message (and any link in it) to the Worker
- *                                 console, so the whole verification / reset flow is
- *                                 testable locally without sending actual emails.
+ * - `env.EMAIL` binding present → delivers through Cloudflare Send Email (`env.EMAIL.send`).
+ *   Locally (`bun dev`, tests) Miniflare simulates the binding and prints the
+ *   headers plus the paths of files holding the body.
+ * - binding missing, local dev   → logs the whole message, links included.
+ * - binding missing, deployed    → logs only the recipient's domain and the subject.
+ *   Reset and verification links are live bearer tokens; Workers Logs is not
+ *   the place for them.
  *
  * To switch providers, replace the send call below — every caller goes through
  * `sendEmail()`, and the auth wiring in `auth.server.ts` never changes.
@@ -20,9 +23,16 @@ export async function sendEmail(env: Env, message: EmailMessage): Promise<void> 
   const from = env.EMAIL_FROM || "noreply@example.com";
 
   if (!env.EMAIL) {
-    console.info(
-      `[email] (no EMAIL binding — not sent)\n  to: ${message.to}\n  subject: ${message.subject}\n  ${message.text}`,
-    );
+    if (import.meta.env.DEV) {
+      console.info(
+        `[email] (no EMAIL binding — not sent)\n  to: ${message.to}\n  subject: ${message.subject}\n  ${message.text}`,
+      );
+    } else {
+      const domain = message.to.split("@").pop();
+      console.error(
+        `[email] EMAIL binding missing — message not sent (to: *@${domain}, subject: ${message.subject})`,
+      );
+    }
     return;
   }
 
