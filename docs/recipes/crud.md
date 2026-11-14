@@ -30,6 +30,11 @@ bun run db:generate && bun run db:migrate:local
 Commit the generated file in `packages/db/drizzle/` — tests pick it up
 automatically, and every app on the D1 sees the table through `@repo/db`.
 
+The route below shows the **50 most recent notes**. For complete history, add
+cursor pagination rather than removing the limit. Verify its ordered lookup
+with many unrelated users/notes, hit and empty cases, `EXPLAIN QUERY PLAN` and
+`meta.rows_read`; see [Cloudflare costs](./cloudflare-costs.md).
+
 ## 2. Route
 
 ```tsx
@@ -58,6 +63,7 @@ export async function loader({ context }: Route.LoaderArgs) {
     .from(note)
     .where(eq(note.userId, session.user.id))
     .orderBy(desc(note.createdAt))
+    .limit(50)
     .then((rows) => rows);
 
   return { notes };
@@ -99,6 +105,8 @@ export async function action({ request, context }: Route.ActionArgs) {
 Render the list inside `<Suspense>` with `use(notes)`, exactly like
 `apps/web/app/routes/dashboard.tsx` does for its stats. Each row deletes
 through its own fetcher and disappears on click, not after the round-trip:
+
+Label the list "50 most recent notes" so the bounded view is clear to users.
 
 ```tsx
 interface NoteRowProps {
@@ -167,6 +175,10 @@ expect(await theirPage.text()).not.toContain("hello");
 ```
 
 ## 5. Gate
+
+Add a D1 row-budget test alongside the route tests; the row count must stay
+bounded as unrelated fixtures grow. Feature correctness and fast rendering do
+not prove that its queries are cheap.
 
 ```bash
 bun run check

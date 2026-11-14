@@ -63,12 +63,18 @@ bunx wrangler secret put BETTER_AUTH_URL --config apps/web/wrangler.jsonc
 
 ## Email, OAuth and the rest
 
+Before a paid deployment, follow [Cloudflare cost checks](./docs/recipes/cloudflare-costs.md):
+measure D1 scanned rows for repeated queries, estimate monthly work and verify
+an account-wide US$5 usage alert to the project owner. Local setup does not
+configure billing. The core query row budgets run in `bun run check`.
+
 Email verification and password reset are wired end to end. Locally (`bun dev`,
 tests) Miniflare simulates the `EMAIL` send_email binding: nothing leaves your
 machine, and the console prints each message's headers plus the paths of the
 files holding its body — open the text file to copy the link, so you can walk the
 entire reset flow without signing up for anything. A deployment without the
-binding logs the message, link included, to the Worker console instead. See
+binding logs only a redacted recipient domain and subject to the Worker console
+(never the body or token link). See
 [docs/recipes/](./docs/recipes/) for switching on a real provider, adding OAuth
 providers, R2 uploads, Workers AI, cron and a second app.
 
@@ -184,11 +190,16 @@ bun run deploy
 
 ## 이메일·OAuth·그 외
 
+유료 배포 전 [Cloudflare 비용 점검](./docs/recipes/cloudflare-costs.md)을 진행합니다.
+반복 쿼리의 실제 스캔 행 수와 월 실행량을 검증하고, 해당 배포 계정에서 프로젝트 소유자에게
+사용량 $5 알림을 설정한 뒤 저장 결과를 확인합니다. 로컬 setup은 결제나 알림을 설정하지
+않습니다. 기본 쿼리의 읽기량 회귀 검증은 `bun run check`에 포함됩니다.
+
 이메일 인증과 비밀번호 재설정이 끝까지 배선되어 있습니다. 로컬(`bun dev`·테스트)에서는
 Miniflare가 `EMAIL` send_email 바인딩을 흉내 내어 실제로 발송하지 않고, 콘솔에 메일 헤더와
 본문이 저장된 파일 경로를 출력합니다. 텍스트 파일에서 링크를 복사하면 아무 데도 가입하지 않고
-재설정 플로우 전체를 로컬에서 확인할 수 있습니다. 바인딩 없이 배포된 환경에서는 링크를 포함한
-메일 내용이 Worker 콘솔에 기록됩니다. 실제 발송 provider 연결, OAuth 추가, R2 업로드,
+재설정 플로우 전체를 로컬에서 확인할 수 있습니다. 바인딩 없이 배포된 환경에서는
+토큰·본문 유출을 막기 위해 수신자 도메인과 제목만 Worker 콘솔에 기록합니다. 실제 발송 provider 연결, OAuth 추가, R2 업로드,
 Workers AI, cron, 두 번째 앱 추가는 [docs/recipes/](./docs/recipes/) 참고.
 
 ## 디자인 시스템

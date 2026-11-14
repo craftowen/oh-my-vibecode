@@ -16,6 +16,7 @@ only in the file is missing in production and `env.<NAME>` is `undefined`.
 | [email.md](./email.md) | Sending real email; swapping Cloudflare Send Email for another provider |
 | [oauth.md](./oauth.md) | Adding Google and other social providers |
 | [crud.md](./crud.md) | A per-user CRUD feature end to end, with tests |
+| [cloudflare-costs.md](./cloudflare-costs.md) | D1 row budgets, query plans, bounded jobs, monthly usage estimates and verified budget alerts |
 | [workers-ai.md](./workers-ai.md) | Calling Workers AI from a loader or action |
 | [r2-uploads.md](./r2-uploads.md) | File uploads to R2 |
 | [cron.md](./cron.md) | Scheduled work with Cron Triggers |

@@ -29,6 +29,7 @@ specific to cron:
   "main": "src/index.ts",
   "compatibility_date": "2026-08-15",
   "compatibility_flags": ["nodejs_compat"],
+  "placement": { "mode": "smart" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -48,7 +49,7 @@ specific to cron:
 ```ts
 // apps/jobs/src/index.ts
 import { drizzle } from "drizzle-orm/d1";
-import { lt } from "drizzle-orm";
+import { asc, inArray, lt } from "drizzle-orm";
 import { session } from "@repo/db";
 
 export default {
@@ -59,13 +60,23 @@ export default {
 
 async function purgeExpiredSessions(env: Env) {
   const db = drizzle(env.DB);
-  const deleted = await db.delete(session).where(lt(session.expiresAt, new Date()));
+  const expired = db.select({ id: session.id }).from(session)
+    .where(lt(session.expiresAt, new Date()))
+    .orderBy(asc(session.expiresAt)).limit(500);
+  const deleted = await db.delete(session).where(inArray(session.id, expired));
   console.log(`[cron] purged ${deleted.meta?.changes ?? 0} expired sessions`);
 }
 ```
 
 Wrap the real work in `ctx.waitUntil()` so the Worker is not killed mid-flight.
 With several schedules, switch on `controller.cron` to pick the job.
+
+The shared schema includes `session_expiresAt_idx`; apply its generated migration
+before deploying this job. The subquery caps each delete at 500 sessions without
+materializing an unbounded id list. A larger backlog remains for subsequent
+runs; choose frequency and progress tracking for the real workload. Verify
+empty and full batches using [D1 row budgets](./cloudflare-costs.md), including
+index writes. Adding a new cleanup predicate requires its own index check.
 
 ### 3. Test it locally
 

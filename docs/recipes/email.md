@@ -15,8 +15,9 @@ enough to walk the whole flow locally.
 
 Where the binding is absent (a deployment whose `wrangler.jsonc` has no
 `send_email` entry — this repo's production config, until Email Routing is
-verified), `sendEmail` logs the message, link included, to the Worker console
-instead of sending it.
+verified), `sendEmail` logs the full message in local dev, and outside local
+dev logs only the redacted recipient domain and subject (never the body or
+verification/reset token links).
 
 ## Using Cloudflare Workers Send Email
 

@@ -53,7 +53,11 @@ Google button in `apps/web/app/routes/login.tsx` does — a static import puts
   className="w-full"
   onClick={async () => {
     const { authClient } = await import("../lib/auth.client");
-    await authClient.signIn.social({ provider: "github", callbackURL: "/dashboard" });
+    await authClient.signIn.social({
+      provider: "github",
+      callbackURL: "/dashboard",
+      errorCallbackURL: "/login",
+    });
   }}
 >
   Continue with GitHub

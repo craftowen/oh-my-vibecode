@@ -177,6 +177,11 @@ export default function Page
   booleans come right after (`const submitting = navigation.formAction === "/login"`).
 - A list query has an `index()` on the columns it filters and sorts on, in
   `packages/db/src/schema.ts` next to the table.
+- Repeated lookups, joins, polling and retention queries also need the actual
+  access path checked, including reverse lookups and sort tie-breakers. Seed
+  representative data and assert `meta.rows_read`/`rows_written` with the result;
+  response time and query counts are not cost budgets. See
+  [Cloudflare costs](./recipes/cloudflare-costs.md).
 - Anything that must survive hydration (timestamps, theme) goes through the
   existing helper (`<LocalTime>`, `getTheme`) instead of reading `window`
   during render.

@@ -93,8 +93,10 @@ export async function loader({ params, context }: Route.LoaderArgs) {
   const session = context.get(sessionContext)!;
   const { env } = context.get(cloudflareContext)!;
 
-  const key = params["*"]!;
-  if (!key.startsWith(`${session.user.id}/`)) throw new Response(null, { status: 404 });
+  const key = params["*"];
+  if (!key || !key.startsWith(`${session.user.id}/`) || key.includes("..")) {
+    throw new Response(null, { status: 404 });
+  }
 
   const object = await env.UPLOADS.get(key);
   if (!object) throw new Response(null, { status: 404 });

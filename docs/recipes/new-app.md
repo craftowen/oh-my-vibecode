@@ -96,6 +96,7 @@ Router in one lockfile is a slow way to find a bug.
   // preview URLs, or they serve the same Worker with no Access in front.
   "workers_dev": false,
   "preview_urls": false,
+  "placement": { "mode": "smart" },
   "routes": [{ "pattern": "admin.example.com", "custom_domain": true }],
   "d1_databases": [
     {
@@ -117,6 +118,11 @@ Use a different dev port from `apps/web` (`server: { port: 5174 }` in
 ### 2. Read the shared tables
 
 Loaders look exactly like `apps/web`'s, minus the session:
+
+Before adding the recent-users list below, declare a `user.createdAt` index in
+`packages/db/src/auth-schema.ts`, generate/apply its migration and add a row-budget
+test. The current core does not need that index. `LIMIT 100` alone does not
+prevent a full-table sort. Follow [Cloudflare cost checks](./cloudflare-costs.md).
 
 ```tsx
 // apps/admin/app/routes/users.tsx
@@ -226,6 +232,7 @@ A plain Worker: no React Router, no Vite, no UI. One entry file exporting
   "compatibility_flags": ["nodejs_compat"],
   // Nothing to serve over HTTP.
   "workers_dev": false,
+  "placement": { "mode": "smart" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -250,7 +257,7 @@ A plain Worker: no React Router, no Vite, no UI. One entry file exporting
 ```ts
 // apps/jobs/src/index.ts
 import { drizzle } from "drizzle-orm/d1";
-import { lt } from "drizzle-orm";
+import { asc, inArray, lt } from "drizzle-orm";
 import { rateLimit, session } from "@repo/db";
 
 export default {
@@ -279,18 +286,31 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 async function purgeExpiredSessions(env: Env) {
-  const deleted = await drizzle(env.DB)
-    .delete(session)
-    .where(lt(session.expiresAt, new Date()));
+  const db = drizzle(env.DB);
+  const expired = db.select({ id: session.id }).from(session)
+    .where(lt(session.expiresAt, new Date()))
+    .orderBy(asc(session.expiresAt)).limit(500);
+  const deleted = await db.delete(session).where(inArray(session.id, expired));
   console.log(`[jobs] purged ${deleted.meta?.changes ?? 0} expired sessions`);
 }
 
 async function purgeStaleRateLimits(env: Env) {
   // lastRequest is epoch milliseconds; a day is far past any limiter window.
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-  await drizzle(env.DB).delete(rateLimit).where(lt(rateLimit.lastRequest, cutoff));
+  const db = drizzle(env.DB);
+  const stale = db.select({ id: rateLimit.id }).from(rateLimit)
+    .where(lt(rateLimit.lastRequest, cutoff))
+    .orderBy(asc(rateLimit.lastRequest)).limit(500);
+  await db.delete(rateLimit).where(inArray(rateLimit.id, stale));
 }
 ```
+
+These jobs rely on the core's `session.expiresAt` and `rateLimit.lastRequest`
+indexes and cap each invocation at 500 rows. Apply shared migrations first,
+test empty/full batches and account for index writes. More than 500 expired rows
+remain for later runs; increase frequency or track progress if the backlog grows.
+All apps share the account's included usage, so budget their combined work and
+verify the owner's alert at deployment: [Cloudflare costs](./cloudflare-costs.md).
 
 Then, from the root:
 

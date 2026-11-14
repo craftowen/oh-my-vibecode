@@ -29,7 +29,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const { env } = context.get(cloudflareContext)!;
   const form = await request.formData();
 
-  const result = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+  const result = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
     messages: [
       { role: "system", content: "Summarise the user's text in one sentence." },
       { role: "user", content: String(form.get("text") ?? "") },
@@ -46,7 +46,7 @@ Inference is slow enough that it should never block the shell. Either stream the
 tokens straight to the client:
 
 ```ts
-const stream = await env.AI.run("@cf/meta/llama-3.1-8b-instruct", {
+const stream = await env.AI.run("@cf/meta/llama-3.1-8b-instruct-fp8", {
   messages,
   stream: true,
 });
