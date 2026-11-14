@@ -1,4 +1,4 @@
-# Required
+# Required (local development only — generate 32+ random bytes for production)
 BETTER_AUTH_SECRET=changeme_in_production
 BETTER_AUTH_URL=http://localhost:5173
 

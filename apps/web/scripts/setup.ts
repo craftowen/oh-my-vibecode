@@ -10,7 +10,7 @@ const devVarsPath = path.join(rootDir, ".dev.vars");
 
 // (a) Create .dev.vars
 if (!fs.existsSync(devVarsPath)) {
-  const secret = crypto.randomUUID();
+  const secret = crypto.randomBytes(32).toString("base64url");
   fs.writeFileSync(
     devVarsPath,
     [
@@ -49,3 +49,4 @@ try {
 }
 
 console.log("Setup complete! Run `bun dev`, open http://localhost:5173/signup — the demo account is pre-filled, so one click gets you to the dashboard.");
+console.log("Before paid deployment: follow docs/recipes/cloudflare-costs.md for D1 row budgets and a verified US$5 owner alert. Local setup does not configure billing.");

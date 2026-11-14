@@ -95,4 +95,5 @@ jobs:
           command: deploy --config build/server/wrangler.json --keep-vars
 
       - name: Check production response
-        run: curl --fail --silent --show-error --retry 3 --retry-all-errors --user-agent 'Mozilla/5.0' --output /dev/null https://oh-my-vibecode.tnlvof.workers.dev/login
+        if: vars.PRODUCTION_URL != ''
+        run: curl --fail --silent --show-error --retry 3 --retry-all-errors --user-agent 'Mozilla/5.0' --output /dev/null "${{ vars.PRODUCTION_URL }}/login"
