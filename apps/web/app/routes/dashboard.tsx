@@ -81,7 +81,7 @@ function StatCard({
   pick: keyof Stats;
 }) {
   return (
-    <Card className="gap-3 py-5">
+    <Card size="compact">
       <CardHeader className="flex-row items-center justify-between gap-2">
         <CardDescription>{label}</CardDescription>
         <Icon className="size-4 text-muted-foreground" aria-hidden />

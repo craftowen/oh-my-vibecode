@@ -1,11 +1,11 @@
 import { Suspense, use } from "react";
 import { Form, data, useFetcher, useFetchers, useNavigation } from "react-router";
-import { and, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { Monitor, ShieldCheck, ShieldAlert } from "lucide-react";
 import { session as sessionTable } from "@repo/db";
 import { buildAuth } from "../lib/auth.server";
-import { authErrorMessage } from "../lib/auth-actions.server";
+import { authErrorMessage, authErrorStatus } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { sessionContext } from "../lib/middleware";
 import { cachedClientLoader } from "../lib/client-cache";
@@ -41,6 +41,7 @@ export async function loader({ context }: Route.LoaderArgs) {
     .select()
     .from(sessionTable)
     .where(and(eq(sessionTable.userId, session.user.id), gt(sessionTable.expiresAt, new Date())))
+    .orderBy(desc(sessionTable.createdAt))
     .then((rows) => rows);
 
   return {
@@ -54,11 +55,16 @@ export const clientLoader = (args: Route.ClientLoaderArgs) =>
   cachedClientLoader(args);
 
 /** What every branch of the action returns, so `actionData` has one shape. */
-type ActionResult = { errors: FormErrors; message?: string };
+type ActionResult = {
+  errors: FormErrors;
+  message?: string;
+  values?: { name?: string };
+};
 
-const ok = (message: string): ActionResult => ({ errors: {}, message });
-const fail = (errors: FormErrors, status = 400) =>
-  data<ActionResult>({ errors }, { status });
+const ok = (message: string, headers?: HeadersInit) =>
+  data<ActionResult>({ errors: {}, message }, headers ? { headers } : undefined);
+const fail = (errors: FormErrors, status = 400, values?: { name?: string }) =>
+  data<ActionResult>({ errors, values }, { status });
 
 /**
  * One action, several intents — the pattern to copy when a page has more than
@@ -68,28 +74,44 @@ export async function action({ request, context }: Route.ActionArgs) {
   const auth = buildAuth(context.get(cloudflareContext)!.env);
   const form = await request.formData();
   const intent = field(form, "intent");
+  const session = context.get(sessionContext)!;
 
   try {
     switch (intent) {
       case "update-profile": {
         const name = field(form, "name");
-        if (!name) return fail({ name: "Name is required." });
+        if (!name) return fail({ name: "Name is required." }, 400, { name });
         if (name.length > MAX_NAME_LENGTH) {
-          return fail({
-            name: `Keep it under ${MAX_NAME_LENGTH} characters.`,
-          });
+          return fail(
+            { name: `Keep it under ${MAX_NAME_LENGTH} characters.` },
+            400,
+            { name },
+          );
         }
-        await auth.api.updateUser({ body: { name }, headers: request.headers });
+        const { headers: authHeaders } = await auth.api.updateUser({
+          body: { name },
+          headers: request.headers,
+          returnHeaders: true,
+        });
         // authMiddleware resolved the session before this action, and a no-JS
         // POST renders this same request's loaders — without this every
         // screen would show the old name after a successful save.
-        const session = context.get(sessionContext)!;
         context.set(sessionContext, { ...session, user: { ...session.user, name } });
-        return ok("Profile updated.");
+        const outHeaders = new Headers();
+        for (const cookie of authHeaders.getSetCookie()) {
+          outHeaders.append("Set-Cookie", cookie);
+        }
+        return ok("Profile updated.", outHeaders);
       }
 
       case "revoke-session": {
         const token = field(form, "token");
+        if (!token) return fail({ form: "Session token is required." });
+        if (token === session.session.token) {
+          return fail({
+            form: "Use Log out in the header to end your current session.",
+          });
+        }
         await auth.api.revokeSession({
           body: { token },
           headers: request.headers,
@@ -98,6 +120,9 @@ export async function action({ request, context }: Route.ActionArgs) {
       }
 
       case "resend-verification": {
+        if (session.user.emailVerified) {
+          return ok("Your email is already verified.");
+        }
         const limit = await limitAuthAttempt(
           context.get(cloudflareContext)!.env,
           request,
@@ -105,7 +130,7 @@ export async function action({ request, context }: Route.ActionArgs) {
           { window: 300, max: 5 },
         );
         if (limit.blocked) return fail({ form: limit.message }, 429);
-        const email = context.get(sessionContext)!.user.email;
+        const email = session.user.email;
         await auth.api.sendVerificationEmail({
           body: { email, callbackURL: "/verify-email" },
           headers: request.headers,
@@ -117,7 +142,10 @@ export async function action({ request, context }: Route.ActionArgs) {
         return fail({ form: "Unknown action." });
     }
   } catch (error) {
-    return fail({ form: authErrorMessage(error, "That did not work. Try again.") });
+    return fail(
+      { form: authErrorMessage(error, "That did not work. Try again.") },
+      authErrorStatus(error),
+    );
   }
 }
 
@@ -166,7 +194,7 @@ export default function Settings({ loaderData, actionData }: Route.ComponentProp
             <Field
               label="Name"
               name="name"
-              defaultValue={user.name}
+              defaultValue={actionData?.values?.name ?? user.name}
               error={errors.name}
               autoComplete="name"
               maxLength={MAX_NAME_LENGTH}
@@ -290,7 +318,7 @@ function RevokeSessionButton({ token }: { token: string }) {
   useToastOnChange(fetcher.data?.message, "success", fetcher.data);
 
   return (
-    <fetcher.Form method="post">
+    <fetcher.Form method="post" className="space-y-2">
       {fetcher.data?.errors.form && <Alert variant="destructive">{fetcher.data.errors.form}</Alert>}
       <input type="hidden" name="intent" value="revoke-session" />
       <input type="hidden" name="token" value={token} />
@@ -307,7 +335,7 @@ function ResendVerification() {
   useToastOnChange(fetcher.data?.message, "success", fetcher.data);
 
   return (
-    <fetcher.Form method="post">
+    <fetcher.Form method="post" className="space-y-2">
       {fetcher.data?.errors.form && <Alert variant="destructive">{fetcher.data.errors.form}</Alert>}
       <input type="hidden" name="intent" value="resend-verification" />
       <Button type="submit" variant="outline" size="sm" disabled={busy}>

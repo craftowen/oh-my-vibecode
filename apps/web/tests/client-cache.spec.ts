@@ -4,7 +4,9 @@ import {
   canRefreshInBackground,
   invalidateClientCache,
   invalidateOnMutation,
+  onClientCacheClear,
   setClientCacheUser,
+  takeRefreshWanted,
 } from "../app/lib/client-cache";
 
 const DASHBOARD_URL = "http://localhost/dashboard";
@@ -144,5 +146,40 @@ describe("client cache", () => {
     expect(canRefreshInBackground({ errors: { name: "Name is required." } })).toBe(false);
     setClientCacheUser(null);
     expect(canRefreshInBackground(undefined)).toBe(false);
+  });
+
+  // Regression: toggling dark mode posted to /api/theme and wiped every signed-in cache entry.
+  it("preserves cached pages on POST /api/theme", async () => {
+    await prime();
+    const next = vi.fn(async () => "ok");
+
+    await invalidateOnMutation(
+      { request: new Request("http://localhost/api/theme", { method: "POST" }) },
+      next,
+    );
+    const afterTheme = args();
+    await cachedClientLoader(afterTheme);
+    expect(afterTheme.serverLoader).not.toHaveBeenCalled();
+  });
+
+  it("unsubscribes clear listeners cleanly and does not flag root staleness as refreshWanted", async () => {
+    const listener = vi.fn();
+    const unsubscribe = onClientCacheClear(listener);
+    invalidateClientCache();
+    expect(listener).toHaveBeenCalledOnce();
+    unsubscribe();
+    invalidateClientCache();
+    expect(listener).toHaveBeenCalledOnce();
+
+    const base = Date.now();
+    const now = vi.spyOn(Date, "now").mockReturnValue(base);
+    try {
+      await prime("http://localhost/dashboard", "root");
+      now.mockReturnValue(base + 20_000);
+      await cachedClientLoader(args("http://localhost/settings"), "root");
+      expect(takeRefreshWanted()).toBe(false);
+    } finally {
+      now.mockRestore();
+    }
   });
 });

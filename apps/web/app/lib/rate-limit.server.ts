@@ -30,26 +30,62 @@ export interface RateLimitResult {
 }
 
 /**
- * Best-effort client address. Cloudflare sets CF-Connecting-IP at the edge.
- * An IPv6 address is cut to its /64: one subscriber or VPS is handed a whole
- * /64, so counting full addresses gave an attacker 2^64 fresh buckets. Better
- * Auth's own limiter buckets the same way (`ipv6Subnet`, default 64).
+ * Best-effort client address from Cloudflare's edge header (`CF-Connecting-IP`).
+ *
+ * We intentionally ignore `X-Forwarded-For` because clients can forge it.
+ * Ports, bracket notation, and zone IDs are stripped; IPv4-mapped IPv6
+ * addresses (`::ffff:192.0.2.1` and `::ffff:c000:0201`) normalize to IPv4, and
+ * real IPv6 addresses are cut to their `/64` prefix so rotating within a single
+ * allocation cannot bypass rate limits.
  */
 export function clientIp(request: Request): string {
-  const ip =
-    request.headers.get("CF-Connecting-IP") ||
-    request.headers.get("X-Forwarded-For")?.split(",")[0]?.trim() ||
-    "unknown";
+  const raw = request.headers.get("CF-Connecting-IP")?.trim();
+  if (!raw) return "unknown";
+
+  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(raw);
+  let ip = bracketed ? bracketed[1] : raw;
+  const zoneIdx = ip.indexOf("%");
+  if (zoneIdx !== -1) ip = ip.slice(0, zoneIdx);
+  if (/^\d+\.\d+\.\d+\.\d+:\d+$/.test(ip)) {
+    ip = ip.slice(0, ip.lastIndexOf(":"));
+  }
+
   if (!ip.includes(":")) return ip;
   // IPv4-mapped (::ffff:192.0.2.1) is one IPv4 client, not a /64.
   if (ip.includes(".")) return ip.slice(ip.lastIndexOf(":") + 1);
+
   const [head, tail = ""] = ip.toLowerCase().split("::");
   const left = head ? head.split(":") : [];
   const right = tail ? tail.split(":") : [];
   const groups = ip.includes("::")
-    ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right]
+    ? [
+        ...left,
+        ...Array(Math.max(0, 8 - left.length - right.length)).fill("0"),
+        ...right,
+      ]
     : left;
-  return `${groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, "")).join(":")}::/64`;
+  const normalized = groups
+    .slice(0, 8)
+    .map((group) => group.replace(/^0+(?=.)/, "") || "0");
+
+  // URL/network stacks may encode IPv4-mapped IPv6 as ::ffff:c000:0201.
+  if (
+    normalized.length === 8 &&
+    normalized[0] === "0" &&
+    normalized[1] === "0" &&
+    normalized[2] === "0" &&
+    normalized[3] === "0" &&
+    normalized[4] === "0" &&
+    normalized[5] === "ffff"
+  ) {
+    const hi = Number.parseInt(normalized[6], 16);
+    const lo = Number.parseInt(normalized[7], 16);
+    if (!Number.isNaN(hi) && !Number.isNaN(lo)) {
+      return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+    }
+  }
+
+  return `${normalized.slice(0, 4).join(":")}::/64`;
 }
 
 export async function consumeRateLimit(

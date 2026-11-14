@@ -5,8 +5,12 @@ import { cloudflareContext } from "../lib/app-context";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
 import {
   MAX_NAME_LENGTH,
+  MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
   field,
+  isSubmittingTo,
+  isValidEmail,
+  rawField,
   safeRedirect,
   type FormErrors,
 } from "../lib/validation";
@@ -56,7 +60,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const form = await request.formData();
   const name = field(form, "name");
   const email = field(form, "email");
-  const password = String(form.get("password") ?? "");
+  const password = rawField(form, "password");
 
   const errors: FormErrors = {};
   if (!name) {
@@ -64,11 +68,17 @@ export async function action({ request, context }: Route.ActionArgs) {
   } else if (name.length > MAX_NAME_LENGTH) {
     errors.name = `Keep it under ${MAX_NAME_LENGTH} characters.`;
   }
-  if (!email) errors.email = "Email is required.";
+  if (!email) {
+    errors.email = "Email is required.";
+  } else if (!isValidEmail(email)) {
+    errors.email = "Enter a valid email address.";
+  }
   if (!password) {
     errors.password = "Password is required.";
   } else if (password.length < MIN_PASSWORD_LENGTH) {
     errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+  } else if (password.length > MAX_PASSWORD_LENGTH) {
+    errors.password = `Use at most ${MAX_PASSWORD_LENGTH} characters.`;
   }
   if (Object.keys(errors).length > 0) {
     return data({ errors, values: { name, email } }, { status: 400 });
@@ -95,7 +105,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   );
   if ("error" in result) {
     const formError: FormErrors = { form: result.error };
-    return data({ errors: formError, values: { name, email } }, { status: 400 });
+    const status =
+      result.status >= 500 ? 500 : result.status === 429 ? 429 : 400;
+    return data({ errors: formError, values: { name, email } }, { status });
   }
   // Re-checked here: the hidden field is client input like any other.
   return redirectWithSession(
@@ -106,7 +118,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 export default function Signup({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
-  const submitting = navigation.formAction === "/signup";
+  const submitting = isSubmittingTo(navigation, "/signup");
   const errors = actionData?.errors ?? {};
   const { redirectTo } = loaderData;
   // Only the first render is pre-filled: after a failed no-JS submit the demo
@@ -167,6 +179,7 @@ export default function Signup({ loaderData, actionData }: Route.ComponentProps)
           type="password"
           autoComplete="new-password"
           minLength={MIN_PASSWORD_LENGTH}
+          maxLength={MAX_PASSWORD_LENGTH}
           defaultValue={demo?.password}
           error={errors.password}
           required

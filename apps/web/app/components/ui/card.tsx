@@ -2,12 +2,17 @@ import { cn } from "../../lib/cn";
 
 type DivProps = React.HTMLAttributes<HTMLDivElement>;
 
-export function Card({ className, ...props }: DivProps) {
+export function Card({
+  className,
+  size = "default",
+  ...props
+}: DivProps & { size?: "default" | "compact" }) {
   return (
     <div
       data-slot="card"
       className={cn(
-        "flex flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm",
+        "flex flex-col rounded-xl border bg-card text-card-foreground shadow-sm",
+        size === "compact" ? "gap-3 py-5" : "gap-6 py-6",
         className,
       )}
       {...props}

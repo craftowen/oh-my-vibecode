@@ -164,4 +164,17 @@ describe("browser mutation origins", () => {
     expect(response.headers.get("Location")).toBe("/login");
     expect(response.headers.get("Set-Cookie")).toContain("theme=dark");
   });
+
+  it("returns text/html on HEAD /login with an empty body and 405 on GET /logout", async () => {
+    const head = await SELF.fetch(new Request("http://localhost/login", { method: "HEAD" }));
+    expect(head.status).toBe(200);
+    expect(head.headers.get("Content-Type")).toContain("text/html");
+    expect(await head.text()).toBe("");
+
+    const getLogout = await SELF.fetch(
+      new Request("http://localhost/logout", { redirect: "manual" }),
+    );
+    expect(getLogout.status).toBe(405);
+    expect(getLogout.headers.get("Allow")).toBe("POST");
+  });
 });

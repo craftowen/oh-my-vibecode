@@ -161,6 +161,8 @@ function ClientCacheSync() {
     | { user: { id: string } }
     | undefined;
   const cacheUser = viewer?.user.id ?? null;
+  const cacheUserRef = useRef<string | null>(cacheUser);
+  cacheUserRef.current = cacheUser;
   const lastRefresh = useRef(0);
   const refresh = useRef(() => {});
   refresh.current = () => {
@@ -217,6 +219,7 @@ function ClientCacheSync() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     /** The URL to prefetch, or null for new-tab, download, opted-out, other-origin, current or fresh links. */
     function prefetchTarget(event: Event) {
+      if (!cacheUserRef.current) return null;
       const a = (event.target as Element | null)?.closest?.("a[href]");
       if (
         !(a instanceof HTMLAnchorElement) ||
@@ -255,18 +258,29 @@ function ClientCacheSync() {
     const cancel = () => clearTimeout(timer);
     // Prefetches a screen asked for directly (requestPrefetch) — no hover needed.
     function onRequest(event: Event) {
+      if (!cacheUserRef.current) return;
       const { hrefs, onlyMissing } = (event as CustomEvent<PrefetchRequest>).detail;
-      const targets = hrefs
-        .filter(
-          (href) =>
-            href !== here.current &&
-            !(onlyMissing ? hasClientCache(href) : hasFreshClientCache(href)),
-        )
-        .map((href) => {
-          const url = new URL(href, window.location.origin);
-          url.searchParams.set(PREFETCH_PARAM, "1");
-          return url.pathname + url.search;
-        });
+      const targets: string[] = [];
+      for (const href of hrefs) {
+        let url: URL;
+        try {
+          url = new URL(href, window.location.origin);
+        } catch {
+          continue;
+        }
+        if (url.origin !== window.location.origin) continue;
+        const normalized = url.pathname + url.search;
+        if (
+          normalized === here.current ||
+          (onlyMissing ? hasClientCache(normalized) : hasFreshClientCache(normalized))
+        ) {
+          continue;
+        }
+        const leaf = matchRoutes(routes, url.pathname)?.at(-1);
+        if (!leaf || !routeManifest[leaf.route.id]?.hasClientLoader) continue;
+        url.searchParams.set(PREFETCH_PARAM, "1");
+        targets.push(url.pathname + url.search);
+      }
       if (targets.length) {
         setPrefetches((list) => [...list, ...targets.filter((t) => !list.includes(t))]);
       }
@@ -304,19 +318,19 @@ function ClientCacheSync() {
  */
 function PrefetchData({ href, onDone }: { href: string; onDone: () => void }) {
   const fetcher = useFetcher();
-  const started = useRef(false);
-  const busy = useRef(false);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
   useEffect(() => {
-    if (!started.current) {
-      started.current = true;
-      void fetcher.load(href);
-    } else if (fetcher.state !== "idle") {
-      busy.current = true;
-    } else if (busy.current) {
-      // Only the idle after a seen load — ending on the idle render right after load() cancels it.
-      onDone();
-    }
-  });
+    let active = true;
+    void fetcher.load(href).finally(() => {
+      if (active) onDoneRef.current();
+    });
+    return () => {
+      active = false;
+    };
+  }, [href]);
+
   return null;
 }
 

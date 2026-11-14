@@ -15,6 +15,7 @@ export default async function handleRequest(
 ) {
   // https://httpwg.org/specs/rfc9110.html#HEAD
   if (request.method.toUpperCase() === "HEAD") {
+    responseHeaders.set("Content-Type", "text/html");
     return new Response(null, {
       status: responseStatusCode,
       headers: responseHeaders,

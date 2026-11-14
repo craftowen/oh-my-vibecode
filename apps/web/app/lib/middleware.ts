@@ -29,11 +29,18 @@ export const authMiddleware = async (
     returnHeaders: true,
   });
   if (!session) {
-    // A client-side navigation asks for /settings.data?_routes=…; the page
-    // the visitor wants is /settings.
+    // Non-GET requests (e.g. an expired-session form POST) cannot be replayed
+    // after login, so send them to /login without a redirectTo target.
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      throw redirect("/login", { headers });
+    }
+    // Single Fetch asks for /_.data or /settings.data?_routes=…&_prefetch=1;
+    // normalize back to the real page URL before carrying it into redirectTo.
     const url = new URL(request.url);
     url.searchParams.delete("_routes");
-    const target = url.pathname.replace(/\.data$/, "") + url.search;
+    url.searchParams.delete("_prefetch");
+    const pathname = url.pathname.replace(/(?:\/_)?\.data$/, "") || "/";
+    const target = pathname + url.search;
     // /dashboard is where login lands anyway; a bare /login keeps that URL clean.
     const login = target === "/dashboard"
       ? "/login"

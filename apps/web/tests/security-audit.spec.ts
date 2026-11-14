@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { env, SELF } from "cloudflare:test";
 import { buildAuth } from "../app/lib/auth.server";
 import { clientIp } from "../app/lib/rate-limit.server";
+import { field, safeRedirect } from "../app/lib/validation";
 import { formPost, signUp } from "./helpers";
 
 function from(ip: string) {
@@ -21,7 +22,18 @@ describe("rate-limit client address", () => {
   it("keeps IPv4 and IPv4-mapped clients apart", () => {
     expect(clientIp(from("192.0.2.1"))).toBe("192.0.2.1");
     expect(clientIp(from("::ffff:192.0.2.1"))).toBe("192.0.2.1");
+    expect(clientIp(from("::ffff:c000:0201"))).toBe("192.0.2.1");
+    expect(clientIp(from("192.0.2.1:54321"))).toBe("192.0.2.1");
+    expect(clientIp(from("[2001:db8:1:2::1]:443"))).toBe("2001:db8:1:2::/64");
+    expect(clientIp(from("fe80::1%eth0"))).toBe("fe80:0:0:0::/64");
     expect(clientIp(from("::ffff:192.0.2.2"))).not.toBe(clientIp(from("::ffff:192.0.2.1")));
+  });
+
+  it("ignores spoofable X-Forwarded-For when CF-Connecting-IP is absent", () => {
+    const req = new Request("http://localhost/", {
+      headers: { "X-Forwarded-For": "198.51.100.10" },
+    });
+    expect(clientIp(req)).toBe("unknown");
   });
 
   it("blocks login guessing that rotates addresses inside one /64", async () => {
@@ -46,6 +58,19 @@ describe("auth configuration", () => {
     expect(() => buildAuth({ ...env, BETTER_AUTH_SECRET: "" })).toThrow(
       /BETTER_AUTH_SECRET/,
     );
+    expect(() => buildAuth({ ...env, BETTER_AUTH_URL: "" })).toThrow(
+      /BETTER_AUTH_URL/,
+    );
+  });
+
+  it("canonicalizes redirects and rejects File uploads in text fields", () => {
+    expect(safeRedirect("/settings?tab=a#s")).toBe("/settings?tab=a#s");
+    expect(safeRedirect("///evil.example.com")).toBe("/");
+    expect(safeRedirect("/\\evil.example.com")).toBe("/");
+
+    const form = new FormData();
+    form.set("name", new File(["hi"], "avatar.txt", { type: "text/plain" }));
+    expect(field(form, "name")).toBe("");
   });
 
   // Regression: the reset email was awaited inside the request, so a reset

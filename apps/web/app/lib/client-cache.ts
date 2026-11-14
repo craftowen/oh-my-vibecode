@@ -61,8 +61,11 @@ function clear() {
  * tab's write, user change) — data kept outside the cache must follow the same
  * rules or a stale value or another user's data survives.
  */
-export function onClientCacheClear(listener: () => void) {
+export function onClientCacheClear(listener: () => void): () => void {
   clearListeners.add(listener);
+  return () => {
+    clearListeners.delete(listener);
+  };
 }
 
 /** Call after (or right before) changing data — clears this tab and every other tab. */
@@ -156,11 +159,13 @@ function revive(entry: Entry) {
 }
 
 /** Hands the server response through untouched and stores it once every streamed value resolves. */
-function store(key: string, data: unknown, gen: number) {
-  if (!user || !data || typeof data !== "object" || Array.isArray(data)) return;
+function store(key: string, data: unknown, gen: number): Promise<void> {
+  if (!user || !data || typeof data !== "object" || Array.isArray(data)) {
+    return Promise.resolve();
+  }
   const source = data as Record<string, unknown>;
   const promiseKeys = Object.keys(source).filter((k) => isThenable(source[k]));
-  void Promise.all(promiseKeys.map((k) => source[k])).then(
+  return Promise.all(promiseKeys.map((k) => source[k])).then(
     (resolved) => {
       if (gen !== generation) return; // A write or user change happened meanwhile — may be stale.
       const value = { ...source };
@@ -206,7 +211,9 @@ export async function cachedClientLoader<T>(
   if (entry) {
     entries.delete(key);
     entries.set(key, entry); // Refresh LRU order.
-    if (Date.now() - entry.at >= FRESH_MS) refreshWanted = true;
+    if (scope !== "root" && Date.now() - entry.at >= FRESH_MS) {
+      refreshWanted = true;
+    }
     return revive(entry) as T;
   }
   const pending = bypass ? undefined : inflight.get(key);
@@ -221,12 +228,19 @@ async function load<T>(key: string, serverLoader: () => Promise<T>): Promise<T> 
   const gen = generation;
   const promise = serverLoader();
   inflight.set(key, { gen, promise });
+  let storing: Promise<void> | undefined;
   try {
     const data = await promise;
-    store(key, data, gen);
+    // Keep the entry in `inflight` until streamed promises finish storing so a
+    // second navigation neither misses the cache nor waits on streaming.
+    storing = store(key, data, gen).finally(() => {
+      if (inflight.get(key)?.promise === promise) inflight.delete(key);
+    });
     return data;
   } finally {
-    if (inflight.get(key)?.promise === promise) inflight.delete(key);
+    if (!storing && inflight.get(key)?.promise === promise) {
+      inflight.delete(key);
+    }
   }
 }
 
@@ -237,7 +251,7 @@ async function load<T>(key: string, serverLoader: () => Promise<T>): Promise<T> 
  */
 function seedClientCache(url: string, scope: string | undefined, data: unknown) {
   const key = keyOf(url, scope);
-  if (user && !entries.has(key)) store(key, data, generation);
+  if (user && !entries.has(key)) void store(key, data, generation);
 }
 
 /**
@@ -251,6 +265,7 @@ export async function invalidateOnMutation<R>(
   next: () => Promise<R>,
 ) {
   if (request.method === "GET") return next();
+  if (new URL(request.url, "http://x").pathname === "/api/theme") return next();
   invalidateClientCache();
   try {
     return await next();

@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { beforeAll, describe, it, expect } from "vitest";
 import { SELF } from "cloudflare:test";
-import { cookieHeader, formPost } from "./helpers";
+import { cookieHeader, formPost, signUp } from "./helpers";
 
 /**
  * These exercise the routes the browser actually hits — the forms and the
@@ -15,6 +15,10 @@ const CREDENTIALS = {
 };
 
 describe("UI auth flows", () => {
+  beforeAll(async () => {
+    await signUp(CREDENTIALS.email, "10.8.0.1");
+  });
+
   it("sends an anonymous visitor from a protected page to /login", async () => {
     const res = await SELF.fetch(
       new Request("http://localhost/dashboard", { redirect: "manual" }),
@@ -25,7 +29,18 @@ describe("UI auth flows", () => {
   });
 
   it("signs up through the signup form and lands on the dashboard", async () => {
-    const res = await SELF.fetch(formPost("/signup", CREDENTIALS));
+    const res = await SELF.fetch(
+      formPost(
+        "/signup",
+        {
+          name: "Signup Flow User",
+          email: "flow-signup@example.com",
+          password: CREDENTIALS.password,
+        },
+        undefined,
+        "10.8.0.2",
+      ),
+    );
 
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/dashboard");

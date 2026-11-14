@@ -1,9 +1,16 @@
+import { useState } from "react";
 import { Form, Link, data, redirect, useNavigation } from "react-router";
 import { buildAuth } from "../lib/auth.server";
 import { callAuth, redirectWithSession } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
-import { field, safeRedirect, type FormErrors } from "../lib/validation";
+import {
+  field,
+  isSubmittingTo,
+  rawField,
+  safeRedirect,
+  type FormErrors,
+} from "../lib/validation";
 import { AuthShell } from "../components/auth-shell";
 import { Field } from "../components/field";
 import { Alert } from "../components/ui/alert";
@@ -27,6 +34,9 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   return data({
     hasGoogle: !!(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
     justReset: url.searchParams.has("reset"),
+    oauthError: url.searchParams.has("error")
+      ? "Google sign-in could not be completed. Please try again or use email and password."
+      : null,
     redirectTo,
   }, { headers });
 }
@@ -40,7 +50,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const { env } = context.get(cloudflareContext)!;
   const form = await request.formData();
   const email = field(form, "email");
-  const password = String(form.get("password") ?? "");
+  const password = rawField(form, "password");
 
   const errors: FormErrors = {};
   if (!email) errors.email = "Email is required.";
@@ -71,7 +81,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   );
   if ("error" in result) {
     const formError: FormErrors = { form: result.error };
-    return data({ errors: formError, values: { email } }, { status: 400 });
+    const status =
+      result.status >= 500 ? 500 : result.status === 429 ? 429 : 400;
+    return data({ errors: formError, values: { email } }, { status });
   }
   // Re-checked here: the hidden field is client input like any other.
   return redirectWithSession(
@@ -82,8 +94,10 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 export default function Login({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
-  const submitting = navigation.formAction === "/login";
+  const [googlePending, setGooglePending] = useState(false);
+  const submitting = isSubmittingTo(navigation, "/login");
   const errors = actionData?.errors ?? {};
+  const formError = errors.form ?? (actionData ? undefined : loaderData.oauthError);
   const { redirectTo } = loaderData;
 
   return (
@@ -112,7 +126,7 @@ export default function Login({ loaderData, actionData }: Route.ComponentProps) 
         </Alert>
       )}
 
-      {errors.form && <Alert variant="destructive">{errors.form}</Alert>}
+      {formError && <Alert variant="destructive">{formError}</Alert>}
 
       <Form method="post" className="space-y-4" replace>
         {redirectTo && <input type="hidden" name="redirectTo" value={redirectTo} />}
@@ -158,24 +172,31 @@ export default function Login({ loaderData, actionData }: Route.ComponentProps) 
           <Button
             variant="outline"
             className="w-full"
+            disabled={submitting || googlePending}
             onClick={async () => {
-              // Imported on click on purpose: the auth client is ~29 kB and
-              // only social sign-in needs it, so /login stays small.
-              // A tab left open across a deploy can 404 the old chunk; a
-              // reload fetches the current one instead of a dead button.
-              const { authClient } = await import("../lib/auth.client").catch(
-                () => {
-                  window.location.reload();
-                  return new Promise<never>(() => {});
-                },
-              );
-              await authClient.signIn.social({
-                provider: "google",
-                callbackURL: redirectTo || "/dashboard",
-              });
+              setGooglePending(true);
+              try {
+                // Imported on click on purpose: the auth client is ~29 kB and
+                // only social sign-in needs it, so /login stays small.
+                // A tab left open across a deploy can 404 the old chunk; a
+                // reload fetches the current one instead of a dead button.
+                const { authClient } = await import("../lib/auth.client").catch(
+                  () => {
+                    window.location.reload();
+                    return new Promise<never>(() => {});
+                  },
+                );
+                await authClient.signIn.social({
+                  provider: "google",
+                  callbackURL: redirectTo || "/dashboard",
+                  errorCallbackURL: "/login",
+                });
+              } catch {
+                setGooglePending(false);
+              }
             }}
           >
-            Continue with Google
+            {googlePending ? "Redirecting…" : "Continue with Google"}
           </Button>
         </>
       )}

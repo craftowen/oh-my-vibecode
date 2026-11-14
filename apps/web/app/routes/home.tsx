@@ -152,7 +152,7 @@ export default function Home() {
           </h2>
           <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map(({ icon: Icon, title, body }) => (
-              <Card key={title} className="gap-3 py-5">
+              <Card key={title} size="compact">
                 <CardContent className="space-y-2">
                   <Icon className="size-5 text-primary" aria-hidden />
                   <h3 className="font-medium">{title}</h3>

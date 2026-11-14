@@ -1,8 +1,14 @@
 import { Form, Link, data, useNavigation } from "react-router";
 import { buildAuth } from "../lib/auth.server";
+import { authErrorStatus } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
 import { limitAuthAttempt } from "../lib/rate-limit.server";
-import { field, type FormErrors } from "../lib/validation";
+import {
+  field,
+  isSubmittingTo,
+  isValidEmail,
+  type FormErrors,
+} from "../lib/validation";
 import { AuthShell } from "../components/auth-shell";
 import { Field } from "../components/field";
 import { Alert } from "../components/ui/alert";
@@ -20,7 +26,11 @@ export async function action({ request, context }: Route.ActionArgs) {
 
   if (!email) {
     const errors: FormErrors = { email: "Email is required." };
-    return data({ errors, sent: false }, { status: 400 });
+    return data({ errors, values: { email }, sent: false }, { status: 400 });
+  }
+  if (!isValidEmail(email)) {
+    const errors: FormErrors = { email: "Enter a valid email address." };
+    return data({ errors, values: { email }, sent: false }, { status: 400 });
   }
 
   const limit = await limitAuthAttempt(env, request, "forgot-password", {
@@ -29,7 +39,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   });
   if (limit.blocked) {
     const errors: FormErrors = { form: limit.message };
-    return data({ errors, sent: false }, { status: 429 });
+    return data({ errors, values: { email }, sent: false }, { status: 429 });
   }
 
   const auth = buildAuth(env);
@@ -39,17 +49,28 @@ export async function action({ request, context }: Route.ActionArgs) {
       headers: request.headers,
     });
   } catch (error) {
-    // Swallow: telling the visitor whether the address exists would leak the
+    const status = authErrorStatus(error);
+    if (status === 429) {
+      const errors: FormErrors = { form: "Too many attempts. Try again later." };
+      return data({ errors, values: { email }, sent: false }, { status: 429 });
+    }
+    if (status >= 500) {
+      console.error("[auth] password reset request failed:", error);
+      const errors: FormErrors = {
+        form: "Could not send reset email right now. Please try again.",
+      };
+      return data({ errors, values: { email }, sent: false }, { status: 500 });
+    }
+    // Swallow 4xx: telling the visitor whether the address exists would leak the
     // account list. The generic confirmation below is returned either way.
-    console.error("[auth] password reset request failed:", error);
   }
 
-  return { errors: {} as FormErrors, sent: true };
+  return { errors: {} as FormErrors, values: { email }, sent: true };
 }
 
 export default function ForgotPassword({ actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
-  const submitting = navigation.formAction === "/forgot-password";
+  const submitting = isSubmittingTo(navigation, "/forgot-password");
   const errors = actionData?.errors ?? {};
 
   return (
@@ -83,6 +104,7 @@ export default function ForgotPassword({ actionData }: Route.ComponentProps) {
               name="email"
               type="email"
               autoComplete="email"
+              defaultValue={actionData?.values?.email}
               error={errors.email}
               required
             />

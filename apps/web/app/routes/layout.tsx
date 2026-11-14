@@ -4,6 +4,7 @@ import { LayoutDashboard, LogOut, Menu, Settings, X } from "lucide-react";
 import { authMiddleware, sessionContext } from "../lib/middleware";
 import { cachedClientLoader } from "../lib/client-cache";
 import { getTheme } from "../lib/theme";
+import { isSubmittingTo } from "../lib/validation";
 import { cn } from "../lib/cn";
 import { Button } from "../components/ui/button";
 import { ThemeToggle } from "../components/theme-toggle";
@@ -30,7 +31,7 @@ export default function AppLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const location = useLocation();
   const navigation = useNavigation();
-  const loggingOut = navigation.formAction === "/logout";
+  const loggingOut = isSubmittingTo(navigation, "/logout");
 
   const drawerRef = useRef<HTMLElement>(null);
   const openButtonRef = useRef<HTMLButtonElement>(null);
@@ -40,7 +41,7 @@ export default function AppLayout() {
   // over the page you just navigated to.
   useEffect(() => {
     setMobileNavOpen(false);
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     const desktop = window.matchMedia("(min-width: 64rem)");
@@ -121,6 +122,7 @@ export default function AppLayout() {
           <Link
             to="/dashboard"
             prefetch="intent"
+            onClick={closeDrawer}
             className="truncate font-semibold tracking-tight"
           >
             oh-my-vibecode
@@ -143,6 +145,7 @@ export default function AppLayout() {
               key={to}
               to={to}
               prefetch="intent"
+              onClick={closeDrawer}
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
@@ -152,13 +155,8 @@ export default function AppLayout() {
                 )
               }
             >
-              {({ isActive }) => (
-                <>
-                  <Icon className="size-4 shrink-0" aria-hidden />
-                  <span className="truncate">{label}</span>
-                  {isActive && <span className="sr-only">(current page)</span>}
-                </>
-              )}
+              <Icon className="size-4 shrink-0" aria-hidden />
+              <span className="truncate">{label}</span>
             </NavLink>
           ))}
         </nav>

@@ -1,9 +1,27 @@
 import { waitUntil } from "cloudflare:workers";
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "@repo/db";
 import { actionEmail, sendEmail } from "./email.server";
+import { consumeRateLimit } from "./rate-limit.server";
+import { MAX_NAME_LENGTH } from "./validation";
+
+/** Enforces trimmed non-empty bounded display names across both form and OAuth paths. */
+function enforceUserName<T extends { name?: unknown }>(data: T): T {
+  if (typeof data.name !== "string") return data;
+  const trimmed = data.name.trim();
+  if (trimmed.length === 0) {
+    throw new APIError("BAD_REQUEST", { message: "Name is required." });
+  }
+  if (trimmed.length > MAX_NAME_LENGTH) {
+    throw new APIError("BAD_REQUEST", {
+      message: `Keep it under ${MAX_NAME_LENGTH} characters.`,
+    });
+  }
+  return trimmed === data.name ? data : { ...data, name: trimmed };
+}
 
 /** Better Auth must be created lazily per-env: on Workers, bindings (env.DB)
  * only exist inside a request, never at module scope. */
@@ -15,12 +33,34 @@ function createAuth(env: Env) {
   if (!env.BETTER_AUTH_SECRET) {
     throw new Error("[auth] BETTER_AUTH_SECRET is not set; refusing to start auth.");
   }
+  // Without baseURL, Better Auth falls back to request host headers / HTTP,
+  // disabling Secure cookies in production and breaking `new URL(url)` links.
+  if (!env.BETTER_AUTH_URL) {
+    throw new Error("[auth] BETTER_AUTH_URL is not set; refusing to start auth.");
+  }
   return betterAuth({
     baseURL: env.BETTER_AUTH_URL,
     secret: env.BETTER_AUTH_SECRET,
     // The schema passed here includes the rateLimit table, which
-    // `rateLimit.storage: "database"` below needs.
+    // `rateLimit.customStorage` below shares with `rate-limit.server.ts`.
     database: drizzleAdapter(drizzle(env.DB), { provider: "sqlite", schema }),
+
+    // Workers never sets NODE_ENV=production, so override the default
+    // /api/auth/error debug page with the app's own login screen.
+    onAPIError: {
+      errorURL: "/login",
+    },
+
+    databaseHooks: {
+      user: {
+        create: {
+          before: async (data) => ({ data: enforceUserName(data) }),
+        },
+        update: {
+          before: async (data) => ({ data: enforceUserName(data) }),
+        },
+      },
+    },
 
     emailAndPassword: {
       enabled: true,
@@ -90,14 +130,20 @@ function createAuth(env: Env) {
      */
     rateLimit: {
       enabled: true,
-      storage: "database",
+      // Custom storage delegates to our atomic D1 upsert and prevents Better
+      // Auth's built-in database storage from pruning rows older than its own
+      // max rule window (300s), which wiped longer action windows (e.g. 3600s).
+      customStorage: {
+        consume: (key, rule) => consumeRateLimit(env, `ba:${key}`, rule),
+      },
       window: 60,
       max: 100,
       customRules: {
-        "/sign-in/email": { window: 60, max: 10 },
-        "/sign-up/email": { window: 300, max: 5 },
+        "/sign-in/email": { window: 300, max: 10 },
+        "/sign-up/email": { window: 3600, max: 10 },
         "/request-password-reset": { window: 300, max: 5 },
         "/reset-password": { window: 300, max: 5 },
+        "/send-verification-email": { window: 300, max: 5 },
       },
     },
 

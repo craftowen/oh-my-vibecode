@@ -4,6 +4,13 @@ import { useFetcher, useLocation } from "react-router";
 import { Button } from "./ui/button";
 import type { Theme } from "../lib/theme";
 
+/** Syncs both light/dark classes so toggling never leaves both set on <html>. */
+function applyThemeClass(mode: Theme | null) {
+  if (!mode) return;
+  document.documentElement.classList.toggle("dark", mode === "dark");
+  document.documentElement.classList.toggle("light", mode === "light");
+}
+
 /** Theme switch. Optimistic: the <html> class is swapped locally the moment
  * you click, while the cookie write goes out through a fetcher. */
 export function ThemeToggle({ theme }: { theme: Theme | null }) {
@@ -28,9 +35,7 @@ export function ThemeToggle({ theme }: { theme: Theme | null }) {
   const next: Theme = current === "dark" ? "light" : "dark";
 
   useEffect(() => {
-    if (current !== null) {
-      document.documentElement.classList.toggle("dark", current === "dark");
-    }
+    applyThemeClass(current);
   }, [current]);
 
   return (
@@ -41,7 +46,7 @@ export function ThemeToggle({ theme }: { theme: Theme | null }) {
       // we already swapped, so re-running every loader would be wasted D1 work.
       defaultShouldRevalidate={false}
       onSubmit={() => {
-        document.documentElement.classList.toggle("dark", next === "dark");
+        applyThemeClass(next);
       }}
     >
       <input type="hidden" name="theme" value={next} />

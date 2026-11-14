@@ -7,7 +7,14 @@ import { AuthShell } from "../components/auth-shell";
 import { Field } from "../components/field";
 import { Alert } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
-import { MIN_PASSWORD_LENGTH, type FormErrors } from "../lib/validation";
+import {
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  field,
+  isSubmittingTo,
+  rawField,
+  type FormErrors,
+} from "../lib/validation";
 import type { Route } from "./+types/reset-password";
 
 export const meta: Route.MetaFunction = () => [
@@ -26,9 +33,9 @@ export function loader({ request }: Route.LoaderArgs) {
 export async function action({ request, context }: Route.ActionArgs) {
   const { env } = context.get(cloudflareContext)!;
   const form = await request.formData();
-  const token = String(form.get("token") ?? "");
-  const password = String(form.get("password") ?? "");
-  const confirm = String(form.get("confirmPassword") ?? "");
+  const token = field(form, "token");
+  const password = rawField(form, "password");
+  const confirm = rawField(form, "confirmPassword");
 
   const errors: FormErrors = {};
   if (!token) errors.form = "This reset link is invalid or has expired.";
@@ -36,6 +43,8 @@ export async function action({ request, context }: Route.ActionArgs) {
     errors.password = "Password is required.";
   } else if (password.length < MIN_PASSWORD_LENGTH) {
     errors.password = `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+  } else if (password.length > MAX_PASSWORD_LENGTH) {
+    errors.password = `Use at most ${MAX_PASSWORD_LENGTH} characters.`;
   }
   if (password !== confirm) errors.confirmPassword = "Passwords do not match.";
   if (Object.keys(errors).length > 0) return data({ errors }, { status: 400 });
@@ -61,7 +70,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   );
   if ("error" in result) {
     const formError: FormErrors = { form: result.error };
-    return data({ errors: formError }, { status: 400 });
+    const status =
+      result.status >= 500 ? 500 : result.status === 429 ? 429 : 400;
+    return data({ errors: formError }, { status });
   }
 
   // All sessions were revoked with the password change — sign in fresh.
@@ -73,7 +84,7 @@ export default function ResetPassword({
   actionData,
 }: Route.ComponentProps) {
   const navigation = useNavigation();
-  const submitting = navigation.formAction === "/reset-password";
+  const submitting = isSubmittingTo(navigation, "/reset-password");
   const errors = actionData?.errors ?? {};
   const { token, linkError } = loaderData;
 
@@ -113,6 +124,7 @@ export default function ResetPassword({
           type="password"
           autoComplete="new-password"
           minLength={MIN_PASSWORD_LENGTH}
+          maxLength={MAX_PASSWORD_LENGTH}
           error={errors.password}
           required
         />
@@ -121,6 +133,7 @@ export default function ResetPassword({
           name="confirmPassword"
           type="password"
           autoComplete="new-password"
+          maxLength={MAX_PASSWORD_LENGTH}
           error={errors.confirmPassword}
           required
         />

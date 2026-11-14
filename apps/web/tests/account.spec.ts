@@ -150,4 +150,42 @@ describe("settings actions", () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it("rejects empty or current-session revocation and skips resend when already verified", async () => {
+    const email = "settings-guards@example.com";
+    const cookie = await signUp(email);
+
+    const emptyRevoke = await SELF.fetch(
+      formPost("/settings", { intent: "revoke-session", token: "" }, cookie),
+    );
+    expect(emptyRevoke.status).toBe(400);
+    expect(await emptyRevoke.text()).toContain("Session token is required");
+
+    const row = await env.DB.prepare(
+      'SELECT s.token AS token FROM session s JOIN "user" u ON u.id = s."userId" WHERE u.email = ? LIMIT 1',
+    )
+      .bind(email)
+      .first<{ token: string }>();
+    const selfRevoke = await SELF.fetch(
+      formPost("/settings", { intent: "revoke-session", token: row!.token }, cookie),
+    );
+    expect(selfRevoke.status).toBe(400);
+    expect(await selfRevoke.text()).toContain("Log out in the header");
+
+    await env.DB.prepare('UPDATE "user" SET "emailVerified" = 1 WHERE email = ?')
+      .bind(email)
+      .run();
+    const beforeCount = await env.DB.prepare(
+      "SELECT count(*) AS n FROM verification",
+    ).first<{ n: number }>();
+    const resend = await SELF.fetch(
+      formPost("/settings", { intent: "resend-verification" }, cookie),
+    );
+    expect(resend.status).toBe(200);
+    expect(await resend.text()).toContain("already verified");
+    const afterCount = await env.DB.prepare(
+      "SELECT count(*) AS n FROM verification",
+    ).first<{ n: number }>();
+    expect(afterCount?.n).toBe(beforeCount?.n);
+  });
 });

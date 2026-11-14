@@ -1,4 +1,3 @@
-import { redirect } from "react-router";
 import { buildAuth } from "../lib/auth.server";
 import { redirectWithSession } from "../lib/auth-actions.server";
 import { cloudflareContext } from "../lib/app-context";
@@ -20,7 +19,10 @@ export async function action({ request, context }: Route.ActionArgs) {
   return redirectWithSession(response, "/login");
 }
 
-/** Nobody should land here with a GET. */
+/** Action-only endpoint: GET requests must never sign a user out. */
 export function loader() {
-  return redirect("/");
+  return new Response("Method Not Allowed", {
+    status: 405,
+    headers: { Allow: "POST" },
+  });
 }

@@ -21,9 +21,64 @@ describe("protected deep links", () => {
 
   it("names the page, not the .data request, on a client-side navigation", async () => {
     const response = await SELF.fetch(
-      "http://localhost/settings.data?tab=a&_routes=routes%2Flayout%2Croutes%2Fsettings",
+      "http://localhost/settings.data?tab=a&_routes=routes%2Flayout%2Croutes%2Fsettings&_prefetch=1",
     );
     expect(await response.text()).toContain('"/login?redirectTo=%2Fsettings%3Ftab%3Da"');
+
+    const rootData = await SELF.fetch(
+      "http://localhost/_.data?_routes=root",
+      { redirect: "manual" },
+    );
+    expect(rootData.status).toBe(200);
+
+    const trailingSettings = await SELF.fetch(
+      "http://localhost/settings/_.data?_routes=routes%2Fsettings&_prefetch=1",
+    );
+    expect(await trailingSettings.text()).toContain('"/login?redirectTo=%2Fsettings"');
+
+    const postRes = await SELF.fetch(
+      formPost("/settings", { intent: "update-profile", name: "Expired" }),
+    );
+    expect(postRes.status).toBe(302);
+    expect(postRes.headers.get("Location")).toBe("/login");
+  });
+
+  it("enforces MAX_PASSWORD_LENGTH, forgot-password email syntax, and safe login error alerts", async () => {
+    const tooLong = "a".repeat(129);
+    const signupRes = await SELF.fetch(
+      formPost(
+        "/signup",
+        { name: "Long Pass", email: "longpass@example.com", password: tooLong },
+        undefined,
+        "10.9.1.10",
+      ),
+    );
+    expect(signupRes.status).toBe(400);
+    expect(await signupRes.text()).toContain("at most 128 characters");
+
+    const resetRes = await SELF.fetch(
+      formPost(
+        "/reset-password",
+        { token: "tok", password: tooLong, confirmPassword: tooLong },
+        undefined,
+        "10.9.1.11",
+      ),
+    );
+    expect(resetRes.status).toBe(400);
+    expect(await resetRes.text()).toContain("at most 128 characters");
+
+    const forgotRes = await SELF.fetch(
+      formPost("/forgot-password", { email: "not-an-email" }, undefined, "10.9.1.12"),
+    );
+    expect(forgotRes.status).toBe(400);
+    expect(await forgotRes.text()).toContain("valid email address");
+
+    const oauthErrPage = await SELF.fetch("http://localhost/login?error=injected_raw_text");
+    const oauthHtml = await oauthErrPage.text();
+    expect(oauthErrPage.status).toBe(200);
+    const alertBody = oauthHtml.match(/role="alert"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? "";
+    expect(alertBody).toContain("Google sign-in could not be completed");
+    expect(alertBody).not.toContain("injected_raw_text");
   });
 
   it("carries a vetted redirectTo into the login form, never an unsafe one", async () => {

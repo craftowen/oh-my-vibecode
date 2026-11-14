@@ -31,11 +31,33 @@ export async function responseErrorMessage(
     return fallback;
   }
   try {
-    const body = (await response.clone().json()) as { message?: string };
-    return body.message || fallback;
+    const body = (await response.clone().json()) as unknown;
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      "message" in body &&
+      typeof body.message === "string" &&
+      body.message.length > 0
+    ) {
+      return body.message;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
+}
+
+/** Extracts an HTTP status from a thrown Better Auth error when available. */
+export function authErrorStatus(error: unknown): number {
+  if (typeof error === "object" && error !== null) {
+    const status =
+      (error as { statusCode?: unknown }).statusCode ??
+      (error as { status?: unknown }).status;
+    if (typeof status === "number" && status >= 400 && status < 500) {
+      return status;
+    }
+  }
+  return 500;
 }
 
 /** Same rule for the throwing path: Better Auth raises APIError for things like
@@ -43,16 +65,20 @@ export async function responseErrorMessage(
  * an ordinary Error with an internal message (never safe to show). */
 export function authErrorMessage(error: unknown, fallback: string): string {
   if (typeof error === "object" && error !== null) {
-    const status =
-      (error as { statusCode?: number }).statusCode ??
-      (error as { status?: number }).status;
-    const clientError = typeof status === "number" && status >= 400 && status < 500;
-
-    if (clientError) {
-      const body = (error as { body?: { message?: string } }).body;
-      if (body?.message) return body.message;
-      const message = (error as { message?: string }).message;
-      if (message) return message;
+    const status = authErrorStatus(error);
+    if (status >= 400 && status < 500) {
+      const body = (error as { body?: unknown }).body;
+      if (
+        typeof body === "object" &&
+        body !== null &&
+        "message" in body &&
+        typeof body.message === "string" &&
+        body.message.length > 0
+      ) {
+        return body.message;
+      }
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === "string" && message.length > 0) return message;
     }
   }
   console.error("[auth] unexpected failure:", error);
@@ -61,19 +87,25 @@ export function authErrorMessage(error: unknown, fallback: string): string {
 
 /**
  * Runs an `asResponse: true` Better Auth call and folds both ways it can fail
- * into one safe message: a rejected credential comes back as a non-OK
+ * into one safe message and status: a rejected credential comes back as a non-OK
  * Response, while some failures (a duplicate email, a driver error) still
  * throw. Checking only one of the two is the bug this exists to prevent.
  */
 export async function callAuth(
   run: () => Promise<Response>,
   fallback: string,
-): Promise<{ response: Response } | { error: string }> {
+): Promise<{ response: Response } | { error: string; status: number }> {
   try {
     const response = await run();
     if (response.ok) return { response };
-    return { error: await responseErrorMessage(response, fallback) };
+    return {
+      error: await responseErrorMessage(response, fallback),
+      status: response.status >= 400 && response.status < 600 ? response.status : 500,
+    };
   } catch (error) {
-    return { error: authErrorMessage(error, fallback) };
+    return {
+      error: authErrorMessage(error, fallback),
+      status: authErrorStatus(error),
+    };
   }
 }

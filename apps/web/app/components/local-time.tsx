@@ -28,15 +28,21 @@ function formatUtc(iso: string): string {
 }
 
 export function LocalTime({ value }: { value: Date | string | number }) {
-  const iso = new Date(value).toISOString();
+  const parsed = new Date(value);
+  const valid = !Number.isNaN(parsed.getTime());
+  const iso = valid ? parsed.toISOString() : "";
 
   // The initial state must match what the server rendered, so hydration is a
   // no-op; the effect below is what localises it.
-  const [text, setText] = useState(() => formatUtc(iso));
+  const [text, setText] = useState(() => (valid ? formatUtc(iso) : "Invalid date"));
 
   useEffect(() => {
-    setText(new Date(iso).toLocaleString());
-  }, [iso]);
+    setText(valid ? new Date(iso).toLocaleString() : "Invalid date");
+  }, [iso, valid]);
+
+  if (!valid) {
+    return <time>{text}</time>;
+  }
 
   return (
     <time dateTime={iso} suppressHydrationWarning>
