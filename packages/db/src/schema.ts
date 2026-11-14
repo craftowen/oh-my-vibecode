@@ -1,7 +1,7 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 /** Better Auth's own tables. Generated — the only hand edits allowed in
- * auth-schema.ts are index declarations mirroring Better Auth's own (see
+ * auth-schema.ts are additive indexes backed by query/cost tests (see
  * AGENTS.md → Constraints). */
 export * from "./auth-schema";
 
@@ -19,4 +19,4 @@ export const rateLimit = sqliteTable("rateLimit", {
   key: text("key").notNull().unique(),
   count: integer("count").notNull(),
   lastRequest: integer("lastRequest").notNull(),
-});
+}, (table) => [index("rateLimit_lastRequest_idx").on(table.lastRequest)]);

@@ -22,6 +22,20 @@
       "when": 1790817017272,
       "tag": "0002_absent_shinobi_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793264473959,
+      "tag": "0003_pretty_tomorrow_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794589698000,
+      "tag": "0004_bizarre_stepford_cuckoos",
+      "breakpoints": true
     }
   ]
 }
